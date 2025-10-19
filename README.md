@@ -10,3 +10,7 @@ Desarrollado con **React + Vite + TailwindCSS**
 - JavaScript (ES6+)
 - Git (para control de versiones)
 
+## Autores
+- Michael Sneider Rodriguez
+- Kevin Alejandro Martinez
+- Cristhian Fernando Reyes
