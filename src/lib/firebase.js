@@ -1,18 +1,46 @@
+// src/lib/firebase.js
 import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyCgbKJO_Wd2IgRxfH-NtVmgul4bdreWqtk",
-  authDomain: "aulasegura-d535e.firebaseapp.com",
-  projectId: "aulasegura-d535e",
-  storageBucket: "aulasegura-d535e.firebasestorage.app",
-  messagingSenderId: "918650073829",
-  appId: "1:918650073829:web:8884dd5e11c571c60a9a0c"
+  apiKey: "TU_API_KEY",
+  authDomain: "TU_AUTH_DOMAIN",
+  projectId: "TU_PROJECT_ID",
+  storageBucket: "TU_STORAGE_BUCKET",
+  messagingSenderId: "TU_MESSAGING_SENDER_ID",
+  appId: "TU_APP_ID"
 };
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const provider = new GoogleAuthProvider();
 
-export const signInWithGoogle = () => signInWithPopup(auth, provider);
-export const logout = () => signOut(auth);
+// Inicia sesión o crea usuario con Google y guarda rol
+export async function loginWithGoogle(role) {
+  const result = await signInWithPopup(auth, provider);
+  const user = result.user;
+
+  let list = JSON.parse(localStorage.getItem("users") || "[]");
+  const exists = list.find((u) => u.email === user.email);
+
+  if (exists) {
+    // Si ya existe, validamos el rol
+    if (exists.role !== role) {
+      alert(`Esta cuenta ya está registrada como ${exists.role}.`);
+      throw new Error("Cuenta ya registrada con otro rol.");
+    }
+    return exists; // Usuario existente
+  } else {
+    // Nuevo registro con Google
+    const newUser = {
+      email: user.email,
+      name: user.displayName,
+      photo: user.photoURL,
+      role,
+      fromGoogle: true
+    };
+    list.push(newUser);
+    localStorage.setItem("users", JSON.stringify(list));
+    return newUser;
+  }
+}
