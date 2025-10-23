@@ -8,6 +8,7 @@ export default function Login() {
   const [pw, setPw] = useState("");
   const nav = useNavigate();
 
+  // 🧩 Login normal con correo y contraseña
   const submit = (e) => {
     e.preventDefault();
     const list = JSON.parse(localStorage.getItem("users") || "[]");
@@ -20,25 +21,25 @@ export default function Login() {
     }
   };
 
+  // 🔥 Login con Google corregido
   const handleGoogleLogin = async () => {
     try {
-      const result = await loginWithGoogle("estudiante"); // rol temporal
-      const list = JSON.parse(localStorage.getItem("users") || "[]");
-      const u = list.find((x) => x.email === result.email);
-      if (!u)
-        return alert(
-          "Esa cuenta de Google no está registrada. Regístrate primero."
-        );
+      const u = await loginWithGoogle("estudiante"); // rol por defecto
+      if (!u) return; // si hubo error o conflicto, se detiene
+
+      // ✅ Si el login fue exitoso, redirige automáticamente
       setUser(u);
       nav(u.role === "docente" ? "/docente" : "/estudiante");
     } catch (err) {
-      console.error(err);
+      console.error("Error en inicio de sesión con Google:", err);
+      alert("Error al iniciar sesión con Google");
     }
   };
 
   return (
     <div className="card max-w-md mx-auto">
       <h2 className="text-xl font-semibold mb-4">Iniciar sesión</h2>
+
       <form onSubmit={submit} className="space-y-4">
         <div>
           <label className="label">Correo</label>
@@ -47,8 +48,10 @@ export default function Login() {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            required
           />
         </div>
+
         <div>
           <label className="label">Contraseña</label>
           <input
@@ -56,8 +59,10 @@ export default function Login() {
             type="password"
             value={pw}
             onChange={(e) => setPw(e.target.value)}
+            required
           />
         </div>
+
         <button className="btn btn-primary w-full">Entrar</button>
       </form>
 
