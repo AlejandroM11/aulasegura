@@ -1,4 +1,3 @@
-// src/lib/firebase.js
 import { initializeApp } from "firebase/app";
 import {
   getAuth,
@@ -19,21 +18,25 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const provider = new GoogleAuthProvider();
 
+// Registro o login con Google (manteniendo roles únicos)
 export async function loginWithGoogle(role) {
   try {
     const result = await signInWithPopup(auth, provider);
     const user = result.user;
 
+    // Lista de usuarios guardados
     let list = JSON.parse(localStorage.getItem("users") || "[]");
     const exists = list.find((u) => u.email === user.email);
 
     if (exists) {
+      // Ya existe pero con otro rol
       if (exists.role !== role) {
         alert(`Esta cuenta ya está registrada como ${exists.role}.`);
         throw new Error("Cuenta ya registrada con otro rol.");
       }
-      return exists;
+      return exists; // Login normal
     } else {
+      // Nuevo registro
       const newUser = {
         email: user.email,
         name: user.displayName,

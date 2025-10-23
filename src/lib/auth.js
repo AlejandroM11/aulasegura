@@ -1,30 +1,26 @@
-// src/lib/auth.js
-
-// Guarda usuario por rol (para permitir sesiones separadas)
-export function setUser(u) {
-  const key = `user_${u.role}`; // ejemplo: user_docente o user_estudiante
-  localStorage.setItem(key, JSON.stringify(u));
-  localStorage.setItem("currentRole", u.role);
-  window.dispatchEvent(new Event("auth-changed"));
-}
-
-// Obtiene el usuario activo (según rol)
+// Manejo de sesión persistente con soporte multirol y pestañas
 export function getUser() {
   try {
-    const role = localStorage.getItem("currentRole");
-    if (!role) return null;
-    return JSON.parse(localStorage.getItem(`user_${role}`));
+    return JSON.parse(localStorage.getItem('user')) || null;
   } catch {
     return null;
   }
 }
 
-// Cierra sesión del rol actual
+export function setUser(u) {
+  // Guarda tanto en localStorage (persistente) como en sessionStorage (solo pestaña)
+  localStorage.setItem('user', JSON.stringify(u));
+  sessionStorage.setItem('user', JSON.stringify(u));
+  window.dispatchEvent(new Event('auth-changed'));
+}
+
 export function logout() {
-  const role = localStorage.getItem("currentRole");
-  if (role) {
-    localStorage.removeItem(`user_${role}`);
-    localStorage.removeItem("currentRole");
-  }
-  window.dispatchEvent(new Event("auth-changed"));
+  localStorage.removeItem('user');
+  sessionStorage.removeItem('user');
+  window.dispatchEvent(new Event('auth-changed'));
+}
+
+// Al cargar la página, sincroniza la sesión si existe en localStorage
+if (!sessionStorage.getItem('user') && localStorage.getItem('user')) {
+  sessionStorage.setItem('user', localStorage.getItem('user'));
 }
