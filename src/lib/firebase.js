@@ -7,12 +7,12 @@ import {
 } from "firebase/auth";
 
 const firebaseConfig = {
-  apiKey: "TU_API_KEY",
-  authDomain: "TU_AUTH_DOMAIN",
-  projectId: "TU_PROJECT_ID",
-  storageBucket: "TU_STORAGE_BUCKET",
-  messagingSenderId: "TU_MESSAGING_SENDER_ID",
-  appId: "TU_APP_ID"
+  apiKey: "AIzaSyCgbKJO_Wd2IgRxfH-NtVmgul4bdreWqtk",
+  authDomain: "aulasegura-d535e.firebaseapp.com",
+  projectId: "aulasegura-d535e",
+  storageBucket: "aulasegura-d535e.firebasestorage.app",
+  messagingSenderId: "918650073829",
+  appId: "1:918650073829:web:8884dd5e11c571c60a9a0c"
 };
 
 const app = initializeApp(firebaseConfig);
