@@ -15,3 +15,4 @@ export function logout() {
   localStorage.removeItem("user");
   window.dispatchEvent(new Event("auth-changed"));
 }
+
