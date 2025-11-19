@@ -37,7 +37,7 @@ export default function Home() {
         <div className="flex-1 flex justify-center">
           <img
             className="w-72 md:w-96 drop-shadow-lg dark:opacity-90 transition-all duration-300 hover:scale-105"
-            src="https://cdni.iconscout.com/illustration/premium/thumb/online-exam-illustration-download-in-svg-png-gif-file-formats--test-question-paper-education-pack-e-learning-illustrations-4089658.png?f=webp"
+            src="https://cdn.pixabay.com/photo/2023/03/23/04/17/bookkeeper-adelaide-7871094_1280.jpg"
             alt="Examen seguro"
           />
         </div>
