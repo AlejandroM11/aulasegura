@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { setUser } from "../lib/auth";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { loginWithGoogle } from "../lib/firebase";
 
 export default function Register() {
@@ -14,6 +14,7 @@ export default function Register() {
     let list = JSON.parse(localStorage.getItem("users") || "[]");
     if (list.some((u) => u.email === email))
       return alert("Ese correo ya existe.");
+
     const u = { email, password: pw, role };
     list.push(u);
     localStorage.setItem("users", JSON.stringify(list));
@@ -32,8 +33,20 @@ export default function Register() {
   };
 
   return (
-    <div className="card max-w-md mx-auto">
-      <h2 className="text-xl font-semibold mb-4">Crear cuenta</h2>
+    <div className="card max-w-md mx-auto overflow-hidden">
+      <img
+        src="https://img.freepik.com/free-vector/students-taking-exam-online_52683-39549.jpg"
+        alt="Registro Aula Segura"
+        className="w-full h-40 object-cover rounded-xl mb-4"
+      />
+
+      <h2 className="text-2xl font-bold mb-1 text-center">
+        Crear cuenta
+      </h2>
+      <p className="text-center mb-4">
+        Únete a Aula Segura y comienza a aprender
+      </p>
+
       <form onSubmit={submit} className="space-y-4">
         <div>
           <label className="label">Correo</label>
@@ -45,6 +58,7 @@ export default function Register() {
             required
           />
         </div>
+
         <div>
           <label className="label">Contraseña</label>
           <input
@@ -55,6 +69,7 @@ export default function Register() {
             required
           />
         </div>
+
         <div>
           <label className="label">Rol</label>
           <select
@@ -66,6 +81,7 @@ export default function Register() {
             <option value="docente">Docente</option>
           </select>
         </div>
+
         <button className="btn btn-primary w-full">Registrarme</button>
       </form>
 
@@ -75,9 +91,16 @@ export default function Register() {
           onClick={handleGoogleRegister}
           className="btn btn-outline w-full"
         >
-          Continuar con Google
+          Google
         </button>
       </div>
+
+      <p className="text-center text-sm mt-4">
+        ¿Ya tienes cuenta?{" "}
+        <Link to="/login" className="text-blue-500 hover:underline">
+          Inicia sesión
+        </Link>
+      </p>
     </div>
   );
 }

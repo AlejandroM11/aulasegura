@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { setUser } from "../lib/auth";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { loginWithGoogle } from "../lib/firebase";
 
 export default function Login() {
@@ -8,7 +8,6 @@ export default function Login() {
   const [pw, setPw] = useState("");
   const nav = useNavigate();
 
-  // 🧩 Login normal con correo y contraseña
   const submit = (e) => {
     e.preventDefault();
     const list = JSON.parse(localStorage.getItem("users") || "[]");
@@ -21,24 +20,33 @@ export default function Login() {
     }
   };
 
-  // 🔥 Login con Google corregido
   const handleGoogleLogin = async () => {
     try {
-      const u = await loginWithGoogle("estudiante"); // rol por defecto
-      if (!u) return; // si hubo error o conflicto, se detiene
+      const u = await loginWithGoogle("estudiante");
+      if (!u) return;
 
-      // ✅ Si el login fue exitoso, redirige automáticamente
       setUser(u);
       nav(u.role === "docente" ? "/docente" : "/estudiante");
     } catch (err) {
-      console.error("Error en inicio de sesión con Google:", err);
+      console.error("Google login error:", err);
       alert("Error al iniciar sesión con Google");
     }
   };
 
   return (
-    <div className="card max-w-md mx-auto">
-      <h2 className="text-xl font-semibold mb-4">Iniciar sesión</h2>
+    <div className="card max-w-md mx-auto overflow-hidden">
+      <img
+        src="https://cdn-icons-png.flaticon.com/128/19007/19007760.png"
+        alt="Login Aula Segura"
+        className="w-full h-40 object-cover rounded-xl mb-4"
+      />
+
+      <h2 className="text-2xl font-bold mb-1 text-center">
+        Iniciar sesión
+      </h2>
+      <p className="text-center mb-4">
+        Accede a tu cuenta para continuar
+      </p>
 
       <form onSubmit={submit} className="space-y-4">
         <div>
@@ -68,10 +76,20 @@ export default function Login() {
 
       <div className="mt-6 text-center">
         <p className="mb-2">O entra con:</p>
-        <button onClick={handleGoogleLogin} className="btn btn-outline w-full">
+        <button
+          onClick={handleGoogleLogin}
+          className="btn btn-outline w-full"
+        >
           Google
         </button>
       </div>
+
+      <p className="text-center text-sm mt-4">
+        ¿No tienes cuenta?{" "}
+        <Link to="/register" className="text-blue-500 hover:underline">
+          Regístrate
+        </Link>
+      </p>
     </div>
   );
 }
