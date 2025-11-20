@@ -6,50 +6,51 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Student from "./pages/Student";
 import Teacher from "./pages/Teacher";
+import Results from "./pages/Results"; // ← 🔵 NUEVO
 import Home from "./pages/Home";
-import { getUser, logout } from "./lib/auth"; // ← asegúrate de tener logout()
+import { getUser, logout } from "./lib/auth";
 import { ThemeProvider } from "./lib/theme";
 
 function Protected({ role, children }) {
   const u = getUser();
   if (!u) return <Navigate to="/login" />;
+
   if (role && u.role !== role)
     return <Navigate to={u.role === "docente" ? "/docente" : "/estudiante"} />;
+
   return children;
 }
 
 export default function App() {
   const [user, setUser] = useState(getUser());
 
-  // 🔄 Mantiene sincronizada la sesión incluso si se abre otra pestaña o se cierra sesión
   useEffect(() => {
     const sync = () => setUser(getUser());
     window.addEventListener("auth-changed", sync);
     window.addEventListener("storage", sync);
+
     return () => {
       window.removeEventListener("auth-changed", sync);
       window.removeEventListener("storage", sync);
     };
   }, []);
 
-  // 🔎 Verificador global (redirige automáticamente si ya hay sesión)
   const autoRedirect = user ? (
-    <Navigate
-      to={user.role === "docente" ? "/docente" : "/estudiante"}
-      replace
-    />
+    <Navigate to={user.role === "docente" ? "/docente" : "/estudiante"} replace />
   ) : null;
 
   return (
     <ThemeProvider>
       <div className="min-h-screen bg-gray-100 dark:bg-gray-900">
         <Banner />
-        <Navbar user={user} onLogout={logout} /> {/* 🔹Navbar recibe props para mostrar usuario y cerrar sesión */}
+        <Navbar user={user} onLogout={logout} />
+
         <div className="max-w-5xl mx-auto px-3 py-6">
           <Routes>
+            {/* 🏠 Inicio */}
             <Route path="/" element={<Home />} />
 
-            {/* 🔐 Login y registro con verificador global */}
+            {/* 🔐 Login / Registro */}
             <Route
               path="/login"
               element={user ? autoRedirect : <Login />}
@@ -59,7 +60,7 @@ export default function App() {
               element={user ? autoRedirect : <Register />}
             />
 
-            {/* 🔒 Rutas protegidas */}
+            {/* 🎓 Estudiante */}
             <Route
               path="/estudiante"
               element={
@@ -68,6 +69,8 @@ export default function App() {
                 </Protected>
               }
             />
+
+            {/* 👨‍🏫 Docente */}
             <Route
               path="/docente"
               element={
@@ -77,7 +80,17 @@ export default function App() {
               }
             />
 
-            {/* 🚪 Redirección por defecto */}
+            {/* 🆕 📊 Resultados — protegida para docentes */}
+            <Route
+              path="/resultados"
+              element={
+                <Protected role="docente">
+                  <Results />
+                </Protected>
+              }
+            />
+
+            {/* 🚪 Default */}
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </div>
