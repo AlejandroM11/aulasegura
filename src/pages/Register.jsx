@@ -3,49 +3,61 @@ import { setUser } from "../lib/auth";
 import { useNavigate, Link } from "react-router-dom";
 import { loginWithGoogle } from "../lib/firebase";
 
-export default function Register() {
+// ⬅️ AÑADE ESTO
+import { apiGetUsers } from "../lib/api";
+
+export default function Login() {
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
-  const [role, setRole] = useState("estudiante");
   const nav = useNavigate();
 
-  const submit = (e) => {
+  // ⬅️ REEMPLAZA COMPLETAMENTE ESTE SUBMIT POR ESTE NUEVO
+  const submit = async (e) => {
     e.preventDefault();
-    let list = JSON.parse(localStorage.getItem("users") || "[]");
-    if (list.some((u) => u.email === email))
-      return alert("Ese correo ya existe.");
 
-    const u = { email, password: pw, role };
-    list.push(u);
-    localStorage.setItem("users", JSON.stringify(list));
-    setUser(u);
-    nav(role === "docente" ? "/docente" : "/estudiante");
-  };
-
-  const handleGoogleRegister = async () => {
     try {
-      const u = await loginWithGoogle(role);
+      const users = await apiGetUsers();
+
+      const u = users.find(
+        (x) => x.email === email && x.password === pw
+      );
+
+      if (!u) {
+        alert("Credenciales inválidas");
+        return;
+      }
+
       setUser(u);
       nav(u.role === "docente" ? "/docente" : "/estudiante");
     } catch (err) {
       console.error(err);
+      alert("Error al iniciar sesión");
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      const u = await loginWithGoogle("estudiante");
+      if (!u) return;
+
+      setUser(u);
+      nav(u.role === "docente" ? "/docente" : "/estudiante");
+    } catch (err) {
+      console.error("Google login error:", err);
+      alert("Error al iniciar sesión con Google");
     }
   };
 
   return (
     <div className="card max-w-md mx-auto overflow-hidden">
       <img
-        src="https://img.freepik.com/free-vector/students-taking-exam-online_52683-39549.jpg"
-        alt="Registro Aula Segura"
+        src="https://cdn-icons-png.flaticon.com/128/19007/19007760.png"
+        alt="Login Aula Segura"
         className="w-full h-40 object-cover rounded-xl mb-4"
       />
 
-      <h2 className="text-2xl font-bold mb-1 text-center">
-        Crear cuenta
-      </h2>
-      <p className="text-center mb-4">
-        Únete a Aula Segura y comienza a aprender
-      </p>
+      <h2 className="text-2xl font-bold mb-1 text-center">Iniciar sesión</h2>
+      <p className="text-center mb-4">Accede a tu cuenta para continuar</p>
 
       <form onSubmit={submit} className="space-y-4">
         <div>
@@ -70,25 +82,13 @@ export default function Register() {
           />
         </div>
 
-        <div>
-          <label className="label">Rol</label>
-          <select
-            className="input"
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-          >
-            <option value="estudiante">Estudiante</option>
-            <option value="docente">Docente</option>
-          </select>
-        </div>
-
-        <button className="btn btn-primary w-full">Registrarme</button>
+        <button className="btn btn-primary w-full">Entrar</button>
       </form>
 
       <div className="mt-6 text-center">
-        <p className="mb-2">O regístrate con:</p>
+        <p className="mb-2">O entra con:</p>
         <button
-          onClick={handleGoogleRegister}
+          onClick={handleGoogleLogin}
           className="btn btn-outline w-full"
         >
           Google
@@ -96,9 +96,9 @@ export default function Register() {
       </div>
 
       <p className="text-center text-sm mt-4">
-        ¿Ya tienes cuenta?{" "}
-        <Link to="/login" className="text-blue-500 hover:underline">
-          Inicia sesión
+        ¿No tienes cuenta?{" "}
+        <Link to="/register" className="text-blue-500 hover:underline">
+          Regístrate
         </Link>
       </p>
     </div>
