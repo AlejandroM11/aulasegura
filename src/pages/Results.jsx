@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { apiGetSubmissions } from "../lib/api";
+import { apiGetSubmissions, apiGetExams } from "../lib/api";
 import { getUser } from "../lib/auth";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
@@ -9,26 +9,33 @@ export default function Results() {
   const user = getUser();
 
   const [results, setResults] = useState([]);
+  const [exams, setExams] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
   const [filter, setFilter] = useState("");
 
-  // 🔵 Cargar resultados desde el backend
+  // 🔵 Cargar resultados y exámenes
   useEffect(() => {
-    loadResults();
+    loadData();
   }, []);
 
-  const loadResults = async () => {
+  const loadData = async () => {
     setLoading(true);
     try {
-      const data = await apiGetSubmissions();
+      const [submissionsData, examsData] = await Promise.all([
+        apiGetSubmissions(),
+        apiGetExams()
+      ]);
+
       // Ordenar por fecha más reciente primero
-      const sorted = data.sort((a, b) => 
+      const sorted = submissionsData.sort((a, b) => 
         new Date(b.submittedAt) - new Date(a.submittedAt)
       );
+      
       setResults(sorted);
+      setExams(examsData);
     } catch (error) {
-      console.error("Error al cargar resultados:", error);
+      console.error("Error al cargar datos:", error);
       alert("Error al cargar los resultados");
     } finally {
       setLoading(false);
@@ -61,6 +68,78 @@ export default function Results() {
     } catch {
       return iso || "—";
     }
+  };
+
+  // 🔵 Obtener el examen completo para mostrar las preguntas
+  const getExamForSubmission = (submission) => {
+    return exams.find(e => e.id === submission.examId || e.code === submission.code);
+  };
+
+  // 🔵 Renderizar una respuesta con formato
+  const renderAnswer = (questionId, answer, exam) => {
+    if (!exam || !exam.questions) return String(answer);
+
+    const question = exam.questions.find(q => q.id == questionId);
+    if (!question) return String(answer);
+
+    // Si es opción múltiple
+    if (question.type === "mc") {
+      const selectedIndex = Number(answer);
+      const selectedOption = question.options?.[selectedIndex];
+      const isCorrect = selectedIndex === question.correctIndex;
+
+      return (
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            {isCorrect ? (
+              <span className="text-green-600 font-bold text-lg">✅</span>
+            ) : (
+              <span className="text-red-600 font-bold text-lg">❌</span>
+            )}
+            <span className={isCorrect ? "text-green-700 font-semibold" : "text-red-700"}>
+              {selectedOption || `Opción ${selectedIndex + 1}`}
+            </span>
+          </div>
+          {!isCorrect && question.options && (
+            <div className="text-xs text-gray-600 ml-7">
+              Correcta: <span className="text-green-600 font-semibold">
+                {question.options[question.correctIndex]}
+              </span>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // Si es pregunta abierta
+    return (
+      <div className="text-gray-800">
+        {String(answer)}
+      </div>
+    );
+  };
+
+  // 🔵 Calcular calificación
+  const calculateGrade = (submission, exam) => {
+    if (!exam || !exam.questions) return null;
+
+    const mcQuestions = exam.questions.filter(q => q.type === "mc");
+    if (mcQuestions.length === 0) return null;
+
+    let correct = 0;
+    mcQuestions.forEach(q => {
+      const answer = submission.answers[q.id];
+      if (answer !== undefined && Number(answer) === q.correctIndex) {
+        correct++;
+      }
+    });
+
+    const percentage = (correct / mcQuestions.length) * 100;
+    return {
+      correct,
+      total: mcQuestions.length,
+      percentage: percentage.toFixed(1)
+    };
   };
 
   // Filtrado
@@ -108,7 +187,7 @@ export default function Results() {
           />
         </div>
 
-        {}
+        {/* RESULTADOS */}
         {loading ? (
           <div className="text-center py-20 text-blue-300 text-xl font-medium">
             <div className="animate-spin rounded-full h-12 w-12 border-4 border-white border-t-transparent mx-auto mb-4"></div>
@@ -128,6 +207,7 @@ export default function Results() {
                     <th className="p-3">Estudiante</th>
                     <th className="p-3">Código</th>
                     <th className="p-3">Título</th>
+                    <th className="p-3">Calificación</th>
                     <th className="p-3">Tiempo fuera</th>
                     <th className="p-3">Forzado</th>
                     <th className="p-3 text-center">Acciones</th>
@@ -137,55 +217,77 @@ export default function Results() {
                 <tbody>
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="text-center py-6 text-blue-200">
+                      <td colSpan={8} className="text-center py-6 text-blue-200">
                         No se encontraron resultados
                       </td>
                     </tr>
                   ) : (
-                    filtered.map((r, i) => (
-                      <tr
-                        key={r.id || i}
-                        className="border-b border-white/20 hover:bg-white/10 transition cursor-pointer"
-                      >
-                        <td className="p-3 align-top text-blue-50 font-medium">
-                          {safeFormatDate(r.submittedAt)}
-                        </td>
-                        <td className="p-3 align-top text-blue-50">
-                          <div className="font-semibold">{r.studentName || "—"}</div>
-                          <div className="text-xs text-blue-200">{r.studentEmail || "—"}</div>
-                        </td>
-                        <td className="p-3 align-top text-blue-50 font-mono font-bold">
-                          {r.code || r.examId || "—"}
-                        </td>
-                        <td className="p-3 align-top text-blue-50 font-medium">
-                          {r.title || "—"}
-                        </td>
-                        <td className="p-3 align-top text-blue-50">
-                          <span className={r.timeOutsideMs > 10000 ? "text-red-300 font-bold" : ""}>
-                            {formatTimeFromMs(r.timeOutsideMs)}
-                          </span>
-                        </td>
-                        <td className="p-3 align-top">
-                          {r.forced ? (
-                            <span className="px-2 py-1 bg-red-500 text-white rounded-full font-medium shadow-md text-xs">
-                              Sí ⚠️
+                    filtered.map((r, i) => {
+                      const exam = getExamForSubmission(r);
+                      const grade = calculateGrade(r, exam);
+
+                      return (
+                        <tr
+                          key={r.id || i}
+                          className="border-b border-white/20 hover:bg-white/10 transition cursor-pointer"
+                        >
+                          <td className="p-3 align-top text-blue-50 font-medium">
+                            {safeFormatDate(r.submittedAt)}
+                          </td>
+                          <td className="p-3 align-top text-blue-50">
+                            <div className="font-semibold">{r.studentName || "—"}</div>
+                            <div className="text-xs text-blue-200">{r.studentEmail || "—"}</div>
+                          </td>
+                          <td className="p-3 align-top text-blue-50 font-mono font-bold">
+                            {r.code || r.examId || "—"}
+                          </td>
+                          <td className="p-3 align-top text-blue-50 font-medium">
+                            {r.title || "—"}
+                          </td>
+                          <td className="p-3 align-top">
+                            {grade ? (
+                              <div className="flex flex-col">
+                                <span className={`font-bold text-lg ${
+                                  grade.percentage >= 70 ? 'text-green-400' : 
+                                  grade.percentage >= 50 ? 'text-yellow-400' : 'text-red-400'
+                                }`}>
+                                  {grade.percentage}%
+                                </span>
+                                <span className="text-xs text-blue-200">
+                                  {grade.correct}/{grade.total}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="text-blue-200 text-sm">N/A</span>
+                            )}
+                          </td>
+                          <td className="p-3 align-top text-blue-50">
+                            <span className={r.timeOutsideMs > 10000 ? "text-red-300 font-bold" : ""}>
+                              {formatTimeFromMs(r.timeOutsideMs)}
                             </span>
-                          ) : (
-                            <span className="px-2 py-1 bg-green-500 text-white rounded-full font-medium shadow-md text-xs">
-                              No ✅
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-3 text-center align-top">
-                          <button
-                            onClick={() => setSelected(r)}
-                            className="px-4 py-1 bg-blue-500 hover:bg-blue-400 rounded-lg shadow text-white font-medium transition transform hover:-translate-y-0.5 hover:scale-105"
-                          >
-                            Ver respuestas
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                          </td>
+                          <td className="p-3 align-top">
+                            {r.forced ? (
+                              <span className="px-2 py-1 bg-red-500 text-white rounded-full font-medium shadow-md text-xs">
+                                Sí ⚠️
+                              </span>
+                            ) : (
+                              <span className="px-2 py-1 bg-green-500 text-white rounded-full font-medium shadow-md text-xs">
+                                No ✅
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3 text-center align-top">
+                            <button
+                              onClick={() => setSelected({ ...r, exam })}
+                              className="px-4 py-1 bg-blue-500 hover:bg-blue-400 rounded-lg shadow text-white font-medium transition transform hover:-translate-y-0.5 hover:scale-105"
+                            >
+                              Ver detalles
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -194,7 +296,7 @@ export default function Results() {
         )}
       </div>
 
-      {/* MODAL DETALLE DE RESPUESTAS */}
+      {/* MODAL DETALLE */}
       <AnimatePresence>
         {selected && (
           <motion.div
@@ -209,15 +311,15 @@ export default function Results() {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.8, opacity: 0 }}
               transition={{ type: "spring", stiffness: 300, damping: 25 }}
-              className="bg-white text-gray-900 max-w-2xl w-full p-6 rounded-2xl shadow-2xl relative"
+              className="bg-white text-gray-900 max-w-3xl w-full p-6 rounded-2xl shadow-2xl relative max-h-[90vh] overflow-y-auto"
               onClick={(e) => e.stopPropagation()}
             >
               <h2 className="text-2xl font-bold mb-3 text-gray-800 flex items-center gap-2">
-                📝 Respuestas del estudiante
+                📝 Detalle del examen
               </h2>
 
-              <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-                <div className="grid grid-cols-2 gap-2 text-sm">
+              <div className="mb-4 p-4 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg">
+                <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <strong>Estudiante:</strong> {selected.studentName}
                   </div>
@@ -236,25 +338,60 @@ export default function Results() {
                   <div>
                     <strong>Tiempo fuera:</strong> {formatTimeFromMs(selected.timeOutsideMs)}
                   </div>
+                  {(() => {
+                    const grade = calculateGrade(selected, selected.exam);
+                    return grade ? (
+                      <div className="col-span-2">
+                        <strong>Calificación:</strong>{" "}
+                        <span className={`text-2xl font-bold ${
+                          grade.percentage >= 70 ? 'text-green-600' : 
+                          grade.percentage >= 50 ? 'text-yellow-600' : 'text-red-600'
+                        }`}>
+                          {grade.percentage}%
+                        </span>
+                        <span className="text-gray-600 ml-2">
+                          ({grade.correct} correctas de {grade.total})
+                        </span>
+                      </div>
+                    ) : null;
+                  })()}
                 </div>
               </div>
 
-              <div className="max-h-96 overflow-y-auto space-y-2 mb-4">
-                <h3 className="font-semibold text-gray-700 mb-2">Respuestas:</h3>
-                {(selected.answers && Object.keys(selected.answers).length > 0)
-                  ? Object.entries(selected.answers).map(([qid, ans]) => (
+              <div className="space-y-3 mb-4">
+                <h3 className="font-semibold text-gray-700 text-lg">Respuestas:</h3>
+                {selected.exam && selected.exam.questions ? (
+                  selected.exam.questions.map((q, idx) => {
+                    const answer = selected.answers[q.id];
+                    return (
                       <div 
-                        key={qid} 
-                        className="p-3 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200 text-gray-900 shadow-md"
+                        key={q.id} 
+                        className="p-4 bg-gray-50 rounded-lg border border-gray-200 shadow-sm"
                       >
-                        <strong className="text-blue-700">Pregunta {qid}:</strong> 
-                        <div className="mt-1 ml-2">{String(ans)}</div>
+                        <div className="font-semibold text-gray-800 mb-2">
+                          {idx + 1}. {q.text}
+                        </div>
+                        <div className="ml-4">
+                          {answer !== undefined ? (
+                            renderAnswer(q.id, answer, selected.exam)
+                          ) : (
+                            <span className="text-gray-400 italic">Sin respuesta</span>
+                          )}
+                        </div>
                       </div>
-                    ))
-                  : <div className="p-3 bg-gray-100 rounded-lg text-gray-600">
-                      Sin respuestas registradas
+                    );
+                  })
+                ) : (
+                  Object.entries(selected.answers || {}).map(([qid, ans]) => (
+                    <div 
+                      key={qid} 
+                      className="p-3 bg-gradient-to-r from-blue-50 to-blue-100 rounded-lg border border-blue-200 text-gray-900 shadow-md"
+                    >
+                      <strong className="text-blue-700">Pregunta {qid}:</strong> 
+                      <div className="mt-1 ml-2">{String(ans)}</div>
                     </div>
-                }
+                  ))
+                )}
               </div>
 
               <div className="flex justify-end">
