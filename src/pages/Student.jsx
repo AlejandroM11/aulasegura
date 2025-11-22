@@ -86,7 +86,7 @@ export default function Student() {
             return;
           }
 
-          // 🔥 Si acabamos de bloquear (últimos 3 segundos), ignorar cambios
+          // 🔥 Si acabamos de bloquear (últimos 2 segundos), ignorar cambios
           if (justBlockedRef.current) {
             console.log("⚠️ Ignorando callback de Firebase - acabamos de bloquear");
             return;
