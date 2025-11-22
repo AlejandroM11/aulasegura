@@ -20,7 +20,6 @@ export default function Teacher() {
   const [showRegistry, setShowRegistry] = useState(true);
   const [filter, setFilter] = useState("");
 
-
   const [title, setTitle] = useState("");
   const [code, setCode] = useState("");
   const [dur, setDur] = useState(30);
@@ -31,10 +30,8 @@ export default function Teacher() {
   const [optionsRaw, setOptionsRaw] = useState("Opción A;Opción B");
   const [correctIndex, setCorrectIndex] = useState(0);
 
-
   const [selectedExam, setSelectedExam] = useState(null);
   const [saving, setSaving] = useState(false);
-
 
   useEffect(() => {
     loadExams();
@@ -52,7 +49,6 @@ export default function Teacher() {
       setLoading(false);
     }
   };
-
 
   const addQuestion = () => {
     if (!qtext.trim()) return alert("La pregunta está vacía");
@@ -72,7 +68,7 @@ export default function Teacher() {
     setCorrectIndex(0);
   };
 
-
+  // 🔵 CORREGIDO: Guardar examen (crear o actualizar)
   const saveExam = async () => {
     if (!title.trim() || !code.trim() || questions.length === 0) {
       return alert("Completa todos los campos y agrega al menos una pregunta");
@@ -90,28 +86,43 @@ export default function Teacher() {
       };
 
       if (selectedExam) {
-
+        // 🔵 ACTUALIZAR EXAMEN EXISTENTE
+        console.log("📝 Actualizando examen:", selectedExam.id, examData);
         await apiUpdateExam(selectedExam.id, examData);
         alert("✅ Examen actualizado exitosamente");
       } else {
-
+        // 🔵 CREAR NUEVO EXAMEN
+        console.log("📝 Creando nuevo examen:", examData);
+        
+        // Verificar que el código no exista
+        const existingExam = exams.find(
+          e => e.code.toUpperCase() === code.trim().toUpperCase()
+        );
+        
+        if (existingExam) {
+          alert("❌ Ya existe un examen con ese código");
+          setSaving(false);
+          return;
+        }
+        
         await apiCreateExam(examData);
         alert("✅ Examen creado exitosamente");
       }
 
-
+      // Recargar lista de exámenes
       await loadExams();
 
-
+      // Resetear formulario
       resetForm();
+      setActive("lista"); // Ir a la lista para ver el resultado
     } catch (error) {
       console.error("Error al guardar examen:", error);
-      alert("❌ " + (error.response?.data?.error || "Error al guardar el examen"));
+      const errorMsg = error.response?.data?.error || error.message || "Error al guardar el examen";
+      alert("❌ " + errorMsg);
     } finally {
       setSaving(false);
     }
   };
-
 
   const deleteExam = async (exam) => {
     if (!window.confirm(`¿Eliminar el examen "${exam.title}"? Esta acción no se puede deshacer.`)) {
@@ -122,14 +133,19 @@ export default function Teacher() {
       await apiDeleteExam(exam.id);
       alert("✅ Examen eliminado");
       await loadExams();
+      
+      // Si estábamos editando este examen, resetear
+      if (selectedExam && selectedExam.id === exam.id) {
+        resetForm();
+      }
     } catch (error) {
       console.error("Error al eliminar:", error);
       alert("❌ Error al eliminar el examen");
     }
   };
 
-
   const openExam = (exam) => {
+    console.log("📂 Abriendo examen para editar:", exam);
     setSelectedExam(exam);
     setTitle(exam.title);
     setCode(exam.code);
@@ -138,16 +154,17 @@ export default function Teacher() {
     setActive("crear");
   };
 
-
   const resetForm = () => {
     setTitle("");
     setCode("");
     setDur(30);
     setQuestions([]);
     setSelectedExam(null);
+    setQtext("");
+    setOptionsRaw("Opción A;Opción B");
+    setCorrectIndex(0);
   };
 
- 
   const filtered = useMemo(
     () => exams.filter(e => 
       (e.code + e.title).toLowerCase().includes(filter.toLowerCase())
@@ -157,29 +174,30 @@ export default function Teacher() {
 
   return (
     <div className="space-y-6">
-
       {/* Tabs */}
       <div className="flex gap-2">
         <button 
           className={`tab ${active === "crear" ? "tab-active" : ""}`} 
           onClick={() => { 
             setActive("crear"); 
-            resetForm();
+            if (!selectedExam) {
+              resetForm(); // Solo resetear si no hay examen seleccionado
+            }
           }}
         >
-          {selectedExam ? "Editar examen" : "Crear examen"}
+          {selectedExam ? "✏️ Editando examen" : "➕ Crear examen"}
         </button>
         <button 
           className={`tab ${active === "lista" ? "tab-active" : ""}`} 
           onClick={() => setActive("lista")}
         >
-          Registro ({exams.length})
+          📋 Registro ({exams.length})
         </button>
         <button 
           className={`tab ${active === "resultados" ? "tab-active" : ""}`} 
           onClick={() => navigate("/resultados")}
         >
-          Resultados
+          📊 Resultados
         </button>
       </div>
 
@@ -192,7 +210,13 @@ export default function Teacher() {
         >
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-xl font-semibold">
-              {selectedExam ? `Editando: ${selectedExam.title}` : "Nuevo examen"}
+              {selectedExam ? (
+                <span className="flex items-center gap-2">
+                  ✏️ Editando: <span className="text-blue-600">{selectedExam.title}</span>
+                </span>
+              ) : (
+                "➕ Nuevo examen"
+              )}
             </h2>
             {selectedExam && (
               <button 
@@ -215,7 +239,8 @@ export default function Teacher() {
               className="input" 
               placeholder="Código (ej: ABC123)" 
               value={code} 
-              onChange={e => setCode(e.target.value.toUpperCase())} 
+              onChange={e => setCode(e.target.value.toUpperCase())}
+              disabled={!!selectedExam} // 🔵 No permitir cambiar código al editar
             />
             <input 
               className="input" 
@@ -226,6 +251,12 @@ export default function Teacher() {
               min="1"
             />
           </div>
+
+          {selectedExam && (
+            <p className="text-xs text-gray-500 mt-1">
+              💡 No puedes cambiar el código de un examen existente
+            </p>
+          )}
 
           {/* Agregar preguntas */}
           <div className="mt-4 p-4 border rounded-xl bg-gray-50 dark:bg-gray-800">
@@ -332,7 +363,7 @@ export default function Teacher() {
             onClick={saveExam}
             disabled={saving || questions.length === 0}
           >
-            {saving ? "Guardando..." : (selectedExam ? "💾 Guardar cambios" : "✅ Crear examen")}
+            {saving ? "⏳ Guardando..." : (selectedExam ? "💾 Guardar cambios" : "✅ Crear examen")}
           </button>
         </motion.section>
       )}
@@ -345,7 +376,7 @@ export default function Teacher() {
           animate={{ opacity: 1 }}
         >
           <div className="flex justify-between mb-3">
-            <h2 className="text-xl font-semibold">Registro de exámenes</h2>
+            <h2 className="text-xl font-semibold">📋 Registro de exámenes</h2>
             <div className="flex gap-2">
               <input 
                 className="input" 
@@ -357,14 +388,15 @@ export default function Teacher() {
                 className="btn btn-outline" 
                 onClick={() => setShowRegistry(s => !s)}
               >
-                {showRegistry ? "Ocultar" : "Mostrar"}
+                {showRegistry ? "👁️ Ocultar" : "👁️ Mostrar"}
               </button>
             </div>
           </div>
 
           {loading ? (
             <div className="text-center py-10 text-gray-500">
-              Cargando exámenes...
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-4 border-blue-600 border-t-transparent mb-2"></div>
+              <p>Cargando exámenes...</p>
             </div>
           ) : showRegistry ? (
             <div className="overflow-x-auto">

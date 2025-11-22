@@ -14,7 +14,6 @@ export default function Results() {
   const [selected, setSelected] = useState(null);
   const [filter, setFilter] = useState("");
 
-  // 🔵 Cargar resultados y exámenes
   useEffect(() => {
     loadData();
   }, []);
@@ -27,7 +26,6 @@ export default function Results() {
         apiGetExams()
       ]);
 
-      // Ordenar por fecha más reciente primero
       const sorted = submissionsData.sort((a, b) => 
         new Date(b.submittedAt) - new Date(a.submittedAt)
       );
@@ -42,15 +40,22 @@ export default function Results() {
     }
   };
 
-  // Verificar que sea docente
   if (!user || user.role !== "docente") {
     navigate("/");
     return null;
   }
 
+  // 🔵 CORREGIDO: Formatear tiempo con límite
   const formatTimeFromMs = (ms) => {
-    if (ms === undefined || ms === null) return "--";
-    const seconds = Math.round(ms / 1000);
+    if (ms === undefined || ms === null) return "0s";
+    
+    // Limitar a máximo 30 segundos para evitar números absurdos
+    const limitedMs = Math.min(ms, 30000);
+    const seconds = Math.round(limitedMs / 1000);
+    
+    if (seconds === 0) return "0s";
+    if (seconds < 60) return `${seconds}s`;
+    
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
     return `${m}m ${s}s`;
@@ -70,19 +75,16 @@ export default function Results() {
     }
   };
 
-  // 🔵 Obtener el examen completo para mostrar las preguntas
   const getExamForSubmission = (submission) => {
     return exams.find(e => e.id === submission.examId || e.code === submission.code);
   };
 
-  // 🔵 Renderizar una respuesta con formato
   const renderAnswer = (questionId, answer, exam) => {
     if (!exam || !exam.questions) return String(answer);
 
     const question = exam.questions.find(q => q.id == questionId);
     if (!question) return String(answer);
 
-    // Si es opción múltiple
     if (question.type === "mc") {
       const selectedIndex = Number(answer);
       const selectedOption = question.options?.[selectedIndex];
@@ -111,7 +113,6 @@ export default function Results() {
       );
     }
 
-    // Si es pregunta abierta
     return (
       <div className="text-gray-800">
         {String(answer)}
@@ -119,7 +120,6 @@ export default function Results() {
     );
   };
 
-  // 🔵 Calcular calificación
   const calculateGrade = (submission, exam) => {
     if (!exam || !exam.questions) return null;
 
@@ -142,7 +142,6 @@ export default function Results() {
     };
   };
 
-  // Filtrado
   const filtered = results.filter(r => {
     const searchTerm = filter.toLowerCase();
     return (
@@ -157,7 +156,6 @@ export default function Results() {
     <div className="min-h-screen w-full bg-gradient-to-b from-blue-900 to-blue-950 text-white">
       <div className="max-w-6xl mx-auto py-12 px-6">
 
-        {/* HEADER */}
         <div className="flex flex-col md:flex-row items-center justify-between mb-10 gap-4">
           <div>
             <h1 className="text-4xl font-bold tracking-wide text-white drop-shadow-lg flex items-center gap-2">
@@ -176,7 +174,6 @@ export default function Results() {
           </button>
         </div>
 
-        {/* Barra de búsqueda */}
         <div className="mb-6">
           <input
             type="text"
@@ -187,7 +184,6 @@ export default function Results() {
           />
         </div>
 
-        {/* RESULTADOS */}
         {loading ? (
           <div className="text-center py-20 text-blue-300 text-xl font-medium">
             <div className="animate-spin rounded-full h-12 w-12 border-4 border-white border-t-transparent mx-auto mb-4"></div>
@@ -225,6 +221,8 @@ export default function Results() {
                     filtered.map((r, i) => {
                       const exam = getExamForSubmission(r);
                       const grade = calculateGrade(r, exam);
+                      // 🔵 CORREGIDO: Limitar tiempo antes de mostrarlo
+                      const limitedTime = Math.min(r.timeOutsideMs || 0, 30000);
 
                       return (
                         <tr
@@ -262,8 +260,9 @@ export default function Results() {
                             )}
                           </td>
                           <td className="p-3 align-top text-blue-50">
-                            <span className={r.timeOutsideMs > 10000 ? "text-red-300 font-bold" : ""}>
-                              {formatTimeFromMs(r.timeOutsideMs)}
+                            <span className={limitedTime > 10000 ? "text-red-300 font-bold" : ""}>
+                              {formatTimeFromMs(limitedTime)}
+                              {r.timeOutsideMs >= 30000 && <span className="text-xs ml-1">(máx)</span>}
                             </span>
                           </td>
                           <td className="p-3 align-top">
@@ -336,7 +335,8 @@ export default function Results() {
                     <strong>Enviado:</strong> {safeFormatDate(selected.submittedAt)}
                   </div>
                   <div>
-                    <strong>Tiempo fuera:</strong> {formatTimeFromMs(selected.timeOutsideMs)}
+                    <strong>Tiempo fuera:</strong> {formatTimeFromMs(Math.min(selected.timeOutsideMs || 0, 30000))}
+                    {selected.timeOutsideMs >= 30000 && <span className="text-xs text-red-600 ml-1">(máximo alcanzado)</span>}
                   </div>
                   {(() => {
                     const grade = calculateGrade(selected, selected.exam);
