@@ -33,7 +33,28 @@ export default function Student() {
   const isExamActiveRef = useRef(false);
   const unsubscribeBlockRef = useRef(null);
 
-  // 🔥 Registrar estudiante en tiempo real al iniciar examen
+  // Cleanup al desmontar o cerrar pestaña
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (exam && user && !fin) {
+        removeActiveStudent(exam.code, user.uid || user.email).catch(console.error);
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      
+      if (exam && user && !fin) {
+        removeActiveStudent(exam.code, user.uid || user.email)
+          .then(() => console.log('✅ Cleanup: Estudiante removido'))
+          .catch(err => console.error('Error en cleanup:', err));
+      }
+    };
+  }, [exam, user, fin]);
+
+  // Registrar estudiante en tiempo real
   useEffect(() => {
     if (exam && user && !fin && !showReview) {
       console.log("🔥 Registrando estudiante activo:", user.email);
@@ -45,32 +66,26 @@ export default function Student() {
         timeLeft: exam.durationMinutes * 60
       }).catch(console.error);
 
-      // 🔥 Escuchar si el profesor lo desbloquea EN TIEMPO REAL
       const unsubscribe = listenToBlockStatus(
         exam.code,
         user.uid || user.email,
         (blocked, reason) => {
-          console.log("📡 Estado de bloqueo actualizado desde Firebase:", blocked, reason);
+          console.log("📡 Estado de bloqueo actualizado:", blocked, reason);
           
           if (blocked && !isBlocked) {
-            // Fue bloqueado por el sistema antifraude
             setIsBlocked(true);
             setBlockReason(reason || "Bloqueado por el profesor");
           } else if (!blocked && isBlocked) {
-            // ✅ El profesor lo desbloqueó en tiempo real
             setIsBlocked(false);
             setBlockReason("");
-            alert("✅ Has sido desbloqueado por el profesor. Puedes continuar con precaución.");
+            alert("✅ Has sido desbloqueado. Puedes continuar con precaución.");
             
-            // Reactivar pantalla completa
             if (document.documentElement.requestFullscreen) {
               document.documentElement.requestFullscreen().catch(() => {});
             }
             
-            // 🔥 REACTIVAR el sistema antifraude inmediatamente
             isExamActiveRef.current = true;
             
-            // Reiniciar el timer si estaba pausado
             if (!intervalRef.current && t > 0) {
               intervalRef.current = setInterval(() => {
                 setT((x) => {
@@ -89,7 +104,6 @@ export default function Student() {
 
       unsubscribeBlockRef.current = unsubscribe;
 
-      // Actualizar estado cada 5 segundos para el monitoreo
       const statusInterval = setInterval(() => {
         const answeredCount = Object.keys(ans).filter(
           k => ans[k] !== undefined && ans[k] !== ""
@@ -112,14 +126,20 @@ export default function Student() {
     }
   }, [exam, user, fin, showReview, ans, t, violations, isBlocked]);
 
-  // 🔥 Sistema antifraude con notificación en tiempo real
+  // Sistema antifraude
   useEffect(() => {
-    if (!exam || fin || showReview || isBlocked) {
+    if (!exam || fin || showReview) {
+      isExamActiveRef.current = false;
+      return;
+    }
+
+    if (isBlocked) {
       isExamActiveRef.current = false;
       return;
     }
 
     isExamActiveRef.current = true;
+    console.log("🛡️ Sistema antifraude ACTIVADO");
 
     const handleKeyDown = (e) => {
       if (!isExamActiveRef.current) return;
@@ -208,7 +228,6 @@ export default function Student() {
     };
   }, [exam, fin, showReview, isBlocked]);
 
-  // 🔥 Bloquear y notificar al profesor EN TIEMPO REAL
   const blockExamRealtime = async (reason) => {
     if (isBlocked || fin || hasSubmittedRef.current) return;
     
@@ -220,7 +239,6 @@ export default function Student() {
     
     if (intervalRef.current) clearInterval(intervalRef.current);
 
-    // 🔥 Notificar al profesor INSTANTÁNEAMENTE
     try {
       await blockStudent(exam.code, user.uid || user.email, reason);
       console.log('✅ Profesor notificado en tiempo real');
@@ -337,11 +355,11 @@ export default function Student() {
     setSubmitting(true);
     isExamActiveRef.current = false;
 
-    // Remover de estudiantes activos
     try {
       await removeActiveStudent(exam.code, user.uid || user.email);
+      console.log('✅ Estudiante removido de Firebase');
     } catch (error) {
-      console.error('Error al remover estudiante activo:', error);
+      console.error('Error al remover estudiante:', error);
     }
 
     const submission = {
@@ -378,6 +396,12 @@ export default function Student() {
   };
 
   const resetExam = () => {
+    if (exam && user) {
+      removeActiveStudent(exam.code, user.uid || user.email)
+        .then(() => console.log('✅ Estudiante removido al resetear'))
+        .catch(err => console.error('Error al remover:', err));
+    }
+    
     setExam(null);
     setAns({});
     setT(0);
@@ -394,7 +418,6 @@ export default function Student() {
     if (unsubscribeBlockRef.current) unsubscribeBlockRef.current();
   };
 
-  // 🔥 Enviar mensaje al profesor EN TIEMPO REAL
   const sendMessageToTeacherRealtime = async () => {
     if (!blockMessage.trim()) {
       alert("Escribe un mensaje");
@@ -418,7 +441,7 @@ export default function Student() {
     return `${m}:${String(sec).padStart(2, "0")}`;
   };
 
-  // ============ PANTALLA 1: UNIRSE ============
+  // PANTALLA: UNIRSE
   if (!exam) {
     return (
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="max-w-lg mx-auto">
@@ -451,7 +474,7 @@ export default function Student() {
     );
   }
 
-  // ============ PANTALLA 2: BLOQUEADO ============
+  // PANTALLA: BLOQUEADO
   if (isBlocked) {
     return (
       <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="max-w-2xl mx-auto">
@@ -486,11 +509,12 @@ export default function Student() {
 
             <p className="text-xs opacity-80 mt-4">
               El profesor fue notificado automáticamente. Espera a que te desbloquee.
+              <br />
+              <span className="font-semibold">⚠️ Si te desbloquea, el sistema antifraude seguirá activo.</span>
             </p>
           </div>
         </div>
 
-        {/* Modal mensaje */}
         <AnimatePresence>
           {showMessageModal && (
             <motion.div
@@ -536,7 +560,7 @@ export default function Student() {
     );
   }
 
-  // ============ PANTALLA 3: ÉXITO ============
+  // PANTALLA: ÉXITO
   if (showSuccess) {
     return (
       <motion.div initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} className="max-w-lg mx-auto text-center">
@@ -549,7 +573,7 @@ export default function Student() {
     );
   }
 
-  // ============ PANTALLA 4: REVISAR ============
+  // PANTALLA: REVISAR
   if (showReview) {
     return (
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-4xl mx-auto">
@@ -593,13 +617,12 @@ export default function Student() {
     );
   }
 
-  // ============ PANTALLA 5: EXAMEN ============
+  // PANTALLA: EXAMEN
   const answered = Object.keys(ans).filter(k => ans[k] !== undefined && ans[k] !== "").length;
   const total = exam.questions.length;
 
   return (
     <div className="max-w-4xl mx-auto">
-      {/* Header */}
       <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 rounded-2xl shadow-xl mb-6 sticky top-0 z-10">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -618,7 +641,6 @@ export default function Student() {
         <p className="text-xs mt-2 text-center">{answered} de {total} respondidas</p>
       </div>
 
-      {/* Preguntas */}
       <div className="space-y-6">
         {exam.questions.map((q, idx) => (
           <motion.div key={q.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.05 }} className="card">
@@ -642,7 +664,6 @@ export default function Student() {
         ))}
       </div>
 
-      {/* Botones finales */}
       <div className="flex gap-3 mt-6 sticky bottom-0 bg-gray-100 dark:bg-gray-900 p-4 rounded-xl">
         <button onClick={openReview} className="btn btn-outline flex-1">📝 Revisar</button>
         <button onClick={() => finishExam(false)} disabled={submitting} className="btn btn-primary flex-1">

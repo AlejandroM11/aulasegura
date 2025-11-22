@@ -6,7 +6,8 @@ import {
   listenToActiveStudents,
   listenToMessages,
   unblockStudent as unblockStudentDB,
-  respondToStudent
+  respondToStudent,
+  removeActiveStudent
 } from "../lib/firebase";
 
 export default function MonitorExam() {
@@ -20,44 +21,66 @@ export default function MonitorExam() {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [responseText, setResponseText] = useState("");
 
-  // 🔥 Cargar exámenes disponibles
+  // Cargar exámenes disponibles
   useEffect(() => {
     loadExams();
   }, []);
 
-  // 🔥 Escuchar estudiantes y mensajes en tiempo real
+  // Escuchar estudiantes y mensajes en tiempo real
   useEffect(() => {
     if (!selectedExam) return;
 
-    console.log("🔥 Conectando con Firebase Realtime Database para:", selectedExam.code);
+    console.log("🔥 Conectando con Firebase para:", selectedExam.code);
 
-    // Escuchar estudiantes activos
     const unsubscribeStudents = listenToActiveStudents(
       selectedExam.code,
       (students) => {
-        console.log("📊 Estudiantes actualizados:", students);
-        setAllStudents(students);
+        const now = Date.now();
+        const activeStudents = students.filter(student => {
+          const lastActivity = student.lastActivity || student.joinedAt;
+          const timeSinceActivity = now - lastActivity;
+          return timeSinceActivity < 30000; // Activo si tuvo actividad en últimos 30s
+        });
+        
+        console.log(`✅ ${activeStudents.length} estudiantes activos de ${students.length}`);
+        setAllStudents(activeStudents);
       }
     );
 
-    // Escuchar mensajes
     const unsubscribeMessages = listenToMessages(
       selectedExam.code,
       (msgs) => {
         console.log("💬 Mensajes actualizados:", msgs);
-        // Ordenar por timestamp más reciente
         const sorted = msgs.sort((a, b) => b.timestamp - a.timestamp);
         setMessages(sorted);
       }
     );
 
-    // Cleanup cuando se desmonta o cambia el examen
+    // Limpiador automático cada 10 segundos
+    const cleanupInterval = setInterval(async () => {
+      const now = Date.now();
+      allStudents.forEach(async (student) => {
+        const lastActivity = student.lastActivity || student.joinedAt;
+        const timeSinceActivity = now - lastActivity;
+        
+        if (timeSinceActivity > 60000) {
+          console.log(`🧹 Removiendo estudiante inactivo: ${student.name}`);
+          try {
+            await removeActiveStudent(selectedExam.code, student.id);
+          } catch (error) {
+            console.error('Error al remover estudiante:', error);
+          }
+        }
+      });
+    }, 10000);
+
     return () => {
-      console.log("🔌 Desconectando listeners de Firebase");
+      console.log("🔌 Desconectando listeners");
+      clearInterval(cleanupInterval);
       unsubscribeStudents();
       unsubscribeMessages();
     };
-  }, [selectedExam]);
+  }, [selectedExam, allStudents]);
 
   const loadExams = async () => {
     try {
@@ -70,23 +93,19 @@ export default function MonitorExam() {
     }
   };
 
-  // 🔥 Desbloquear estudiante en tiempo real
   const handleUnblockStudent = async (student) => {
     if (!window.confirm(`¿Desbloquear a ${student.name}?`)) return;
 
     try {
       await unblockStudentDB(selectedExam.code, student.id);
       console.log("✅ Estudiante desbloqueado:", student.name);
-      
-      // Notificación visual
-      alert(`✅ ${student.name} ha sido desbloqueado y puede continuar el examen`);
+      alert(`✅ ${student.name} ha sido desbloqueado y puede continuar`);
     } catch (error) {
       console.error("Error al desbloquear:", error);
       alert("❌ Error al desbloquear al estudiante");
     }
   };
 
-  // 🔥 Responder mensaje en tiempo real
   const handleRespondMessage = async (messageId) => {
     if (!responseText.trim()) {
       alert("Escribe una respuesta");
@@ -104,12 +123,11 @@ export default function MonitorExam() {
     }
   };
 
-  // 📊 Calcular estadísticas
+  // Calcular estadísticas
   const activeStudents = allStudents.filter(s => s.status === 'active' && !s.isBlocked);
   const blockedStudents = allStudents.filter(s => s.isBlocked);
   const totalStudents = allStudents.length;
 
-  // ⏱️ Formatear tiempo
   const formatTime = (seconds) => {
     if (!seconds || seconds < 0) return "0:00";
     const m = Math.floor(seconds / 60);
@@ -117,7 +135,6 @@ export default function MonitorExam() {
     return `${m}:${String(s).padStart(2, '0')}`;
   };
 
-  // 📅 Formatear fecha
   const formatTimestamp = (timestamp) => {
     if (!timestamp) return "";
     const date = new Date(timestamp);
@@ -129,7 +146,7 @@ export default function MonitorExam() {
     return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
   };
 
-  // 🎨 PANTALLA DE CARGA
+  // PANTALLA DE CARGA
   if (loading) {
     return (
       <div className="text-center py-20">
@@ -139,7 +156,7 @@ export default function MonitorExam() {
     );
   }
 
-  // 🎨 SELECCIÓN DE EXAMEN
+  // SELECCIÓN DE EXAMEN
   if (!selectedExam) {
     return (
       <div className="max-w-4xl mx-auto">
@@ -148,28 +165,20 @@ export default function MonitorExam() {
             <h1 className="text-3xl font-bold">📡 Monitoreo en Tiempo Real</h1>
             <p className="text-gray-600 mt-1">Selecciona un examen para comenzar a monitorear</p>
           </div>
-          <button
-            onClick={() => navigate("/docente")}
-            className="btn btn-outline"
-          >
+          <button onClick={() => navigate("/docente")} className="btn btn-outline">
             ← Volver
           </button>
         </div>
 
         <div className="card">
-          <h2 className="text-xl font-semibold mb-4">
-            Exámenes disponibles
-          </h2>
+          <h2 className="text-xl font-semibold mb-4">Exámenes disponibles</h2>
 
           <div className="space-y-3">
             {exams.length === 0 ? (
               <div className="text-center text-gray-500 py-12">
                 <p className="text-4xl mb-2">📭</p>
                 <p>No hay exámenes disponibles</p>
-                <button 
-                  onClick={() => navigate("/docente")}
-                  className="btn btn-primary mt-4"
-                >
+                <button onClick={() => navigate("/docente")} className="btn btn-primary mt-4">
                   Crear primer examen
                 </button>
               </div>
@@ -203,7 +212,7 @@ export default function MonitorExam() {
     );
   }
 
-  // 🎨 PANEL DE MONITOREO ACTIVO
+  // PANEL DE MONITOREO ACTIVO
   return (
     <div className="max-w-7xl mx-auto">
       {/* Header */}
@@ -315,7 +324,7 @@ export default function MonitorExam() {
                         <div className="text-right">
                           <p className="text-sm font-semibold">⏱️ {formatTime(student.timeLeft)}</p>
                           <p className="text-xs text-gray-500">
-                            Conectado hace {formatTimestamp(student.joinedAt)}
+                            Conectado {formatTimestamp(student.joinedAt)}
                           </p>
                         </div>
                       </div>
@@ -387,7 +396,7 @@ export default function MonitorExam() {
                             <p className="font-bold">{student.name}</p>
                             <p className="text-sm text-gray-600">{student.email}</p>
                             <p className="text-xs text-red-600 mt-1">
-                              🕒 Bloqueado hace {formatTimestamp(student.blockedAt)}
+                              🕒 Bloqueado {formatTimestamp(student.blockedAt)}
                             </p>
                           </div>
                         </div>
