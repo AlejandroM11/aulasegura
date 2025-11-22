@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { apiGetExamByCode, apiCreateSubmission } from "../lib/api";
 import { getUser } from "../lib/auth";
 import useExamGuard from "../hooks/useExamGuard";
@@ -11,9 +11,20 @@ export default function Student() {
   const [t, setT] = useState(0);
   const [fin, setFin] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [submitting, setSubmitting] = useState(false); // 🔵 NUEVO: prevenir doble envío
   
   const user = getUser();
-  const timeOutside = useExamGuard(() => !fin && finish(true));
+  const hasSubmittedRef = useRef(false); // 🔵 NUEVO: track si ya envió
+  
+  // 🔵 CORREGIDO: Limitar tiempo fuera a máximo 30 segundos
+  const timeOutside = useExamGuard(useCallback(() => {
+    if (!fin && !hasSubmittedRef.current) {
+      finish(true);
+    }
+  }, [fin]));
+
+  // Formatear tiempo fuera con límite
+  const formattedTimeOutside = Math.min(timeOutside, 30000);
 
   useEffect(() => {
     let iv;
@@ -22,7 +33,9 @@ export default function Student() {
 
       // Pantalla completa al iniciar examen
       if (document.documentElement.requestFullscreen) {
-        document.documentElement.requestFullscreen();
+        document.documentElement.requestFullscreen().catch(err => {
+          console.log("No se pudo activar pantalla completa:", err);
+        });
       }
 
       iv = setInterval(
@@ -30,7 +43,9 @@ export default function Student() {
           setT((x) => {
             if (x <= 1) {
               clearInterval(iv);
-              finish(false);
+              if (!hasSubmittedRef.current) {
+                finish(false);
+              }
               return 0;
             }
             return x - 1;
@@ -60,6 +75,7 @@ export default function Student() {
         console.log("✅ Examen encontrado:", response.exam);
         setExam(response.exam);
         setAns({});
+        hasSubmittedRef.current = false; // Reset al unirse
       } else {
         console.error("❌ Examen no encontrado:", response);
         alert("❌ Código inválido o examen no encontrado");
@@ -84,9 +100,15 @@ export default function Student() {
       [id]: v,
     }));
 
-  // 🔵 Enviar resultados al backend
+  // 🔵 CORREGIDO: Enviar resultados al backend (prevenir doble envío)
   const finish = async (forced) => {
-    if (!exam) return;
+    if (!exam || hasSubmittedRef.current || submitting) {
+      console.log("⚠️ Envío bloqueado - ya se envió o está en proceso");
+      return;
+    }
+
+    hasSubmittedRef.current = true; // Marcar como enviado INMEDIATAMENTE
+    setSubmitting(true);
 
     const submission = {
       examId: exam.id,
@@ -96,7 +118,7 @@ export default function Student() {
       studentName: user?.name || "Estudiante",
       submittedAt: new Date().toISOString(),
       answers: ans,
-      timeOutsideMs: timeOutside,
+      timeOutsideMs: Math.min(timeOutside, 30000), // 🔵 Limitar a 30 segundos
       forced,
     };
 
@@ -107,11 +129,16 @@ export default function Student() {
       
       // Salir de pantalla completa
       if (document.fullscreenElement) {
-        document.exitFullscreen();
+        document.exitFullscreen().catch(err => {
+          console.log("Error al salir de pantalla completa:", err);
+        });
       }
     } catch (error) {
       console.error("Error al enviar examen:", error);
+      hasSubmittedRef.current = false; // Permitir reintento si falla
       alert("❌ Error al enviar el examen. Intenta de nuevo.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -209,6 +236,7 @@ export default function Student() {
                       checked={ans[q.id] === i}
                       onChange={() => ch(q.id, i)}
                       className="w-4 h-4"
+                      disabled={fin}
                     />
                     <span>{op}</span>
                   </label>
@@ -221,6 +249,7 @@ export default function Student() {
                 placeholder="Escribe tu respuesta aquí..."
                 value={ans[q.id] || ""}
                 onChange={(e) => ch(q.id, e.target.value)}
+                disabled={fin}
               />
             )}
           </li>
@@ -231,16 +260,18 @@ export default function Student() {
         <button
           className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
           onClick={() => finish(false)}
-          disabled={fin}
+          disabled={fin || submitting}
         >
-          {fin ? "✅ Examen enviado" : "Finalizar examen"}
+          {submitting ? "Enviando..." : fin ? "✅ Examen enviado" : "Finalizar examen"}
         </button>
 
         <div className="flex items-center gap-4 text-sm">
-          <span className={timeOutside > 10000 ? "text-red-500 font-bold" : "text-gray-600 dark:text-gray-400"}>
-            ⚠️ Tiempo fuera: {(timeOutside / 1000).toFixed(1)}s
+          {/* 🔵 CORREGIDO: Mostrar tiempo limitado y formateado */}
+          <span className={formattedTimeOutside > 10000 ? "text-red-500 font-bold" : "text-gray-600 dark:text-gray-400"}>
+            ⚠️ Tiempo fuera: {(formattedTimeOutside / 1000).toFixed(1)}s
+            {timeOutside >= 30000 && " (máx)"}
           </span>
-          {timeOutside > 20000 && (
+          {formattedTimeOutside > 20000 && (
             <span className="text-red-600 font-bold animate-pulse">
               ¡Cuidado! Permanece en la página
             </span>
