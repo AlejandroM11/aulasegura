@@ -5,6 +5,10 @@
       "destination": "/api/evaluaciones/code/[code]" 
     },
     { 
+      "source": "/api/evaluaciones/:id", 
+      "destination": "/api/evaluaciones/[id]" 
+    },
+    { 
       "source": "/(.*)", 
       "destination": "/" 
     }
