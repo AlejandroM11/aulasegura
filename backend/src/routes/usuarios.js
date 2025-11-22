@@ -3,18 +3,24 @@ import { db } from "../database.js";
 
 const router = Router();
 
-// Obtener todos los usuarios
+// Obtener todos los usuarios (CON password para desarrollo)
 router.get("/", async (req, res) => {
   try {
     const snapshot = await db.collection("users").get();
-    const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const data = snapshot.docs.map(doc => {
+      const userData = doc.data();
+      return { 
+        id: doc.id, 
+        ...userData  // ⚠️ Incluye password - Solo para desarrollo
+      };
+    });
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Crear usuario
+// Crear usuario (ya no se usa porque usamos auth/register)
 router.post("/", async (req, res) => {
   try {
     const newUser = req.body;

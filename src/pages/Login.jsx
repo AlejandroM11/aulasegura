@@ -2,21 +2,39 @@ import { useState } from "react";
 import { setUser } from "../lib/auth";
 import { useNavigate, Link } from "react-router-dom";
 import { loginWithGoogle } from "../lib/firebase";
+import axios from "axios";
+
+const API_URL = "http://localhost:3000/api";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
+  const [loading, setLoading] = useState(false);
   const nav = useNavigate();
 
-  const submit = (e) => {
+  const submit = async (e) => {
     e.preventDefault();
-    const list = JSON.parse(localStorage.getItem("users") || "[]");
-    const u = list.find((x) => x.email === email && x.password === pw);
-    if (u) {
-      setUser(u);
-      nav(u.role === "docente" ? "/docente" : "/estudiante");
-    } else {
-      alert("Credenciales inválidas");
+    setLoading(true);
+
+    try {
+      // 🔵 Buscar usuario en Firestore a través del backend
+      const response = await axios.get(`${API_URL}/usuarios`);
+      const users = response.data;
+
+      // Buscar usuario con email y password
+      const user = users.find((u) => u.email === email && u.password === pw);
+
+      if (user) {
+        setUser(user);
+        nav(user.role === "docente" ? "/docente" : "/estudiante");
+      } else {
+        alert("❌ Credenciales inválidas");
+      }
+    } catch (err) {
+      console.error("Error al iniciar sesión:", err);
+      alert("❌ Error al iniciar sesión: " + (err.response?.data?.error || err.message));
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -71,7 +89,12 @@ export default function Login() {
           />
         </div>
 
-        <button className="btn btn-primary w-full">Entrar</button>
+        <button 
+          className="btn btn-primary w-full" 
+          disabled={loading}
+        >
+          {loading ? "Entrando..." : "Entrar"}
+        </button>
       </form>
 
       <div className="mt-6 text-center">
@@ -79,8 +102,9 @@ export default function Login() {
         <button
           onClick={handleGoogleLogin}
           className="btn btn-outline w-full"
+          disabled={loading}
         >
-          Google
+          🔵 Google
         </button>
       </div>
 
