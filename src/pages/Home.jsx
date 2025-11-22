@@ -1,12 +1,6 @@
 import { Link } from "react-router-dom";
-import { useEffect } from "react";
-import { seed } from "../lib/storage";
 
 export default function Home() {
-  useEffect(() => {
-    seed();
-  }, []);
-
   return (
     <div className="w-full">
       {/* Hero principal */}
