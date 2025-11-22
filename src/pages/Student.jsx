@@ -32,6 +32,7 @@ export default function Student() {
   const intervalRef = useRef(null);
   const isExamActiveRef = useRef(false);
   const unsubscribeBlockRef = useRef(null);
+  const blockingInProgressRef = useRef(false); // 🔥 NUEVO: Evitar desbloqueos accidentales
 
   // Cleanup al desmontar o cerrar pestaña
   useEffect(() => {
@@ -66,19 +67,25 @@ export default function Student() {
         timeLeft: exam.durationMinutes * 60
       }).catch(console.error);
 
+      // 🔥 Escuchar cambios de bloqueo desde Firebase
       const unsubscribe = listenToBlockStatus(
         exam.code,
         user.uid || user.email,
         (blocked, reason) => {
-          console.log("📡 Estado de bloqueo actualizado:", blocked, reason);
+          console.log("📡 Firebase dice:", { blocked, reason, currentlyBlocked: isBlocked });
           
-          if (blocked && !isBlocked) {
+          // 🔥 CRÍTICO: Solo desbloquear si NO estamos en proceso de bloqueo
+          if (blocked && !blockingInProgressRef.current) {
+            console.log("🚫 BLOQUEADO por Firebase");
             setIsBlocked(true);
-            setBlockReason(reason || "Bloqueado por el profesor");
-          } else if (!blocked && isBlocked) {
+            setBlockReason(reason || "Bloqueado por el sistema");
+            blockingInProgressRef.current = false;
+          } else if (!blocked && isBlocked && !blockingInProgressRef.current) {
+            // ✅ Profesor lo desbloqueó REALMENTE
+            console.log("✅ DESBLOQUEADO por el profesor");
             setIsBlocked(false);
             setBlockReason("");
-            alert("✅ Has sido desbloqueado. Puedes continuar con precaución.");
+            alert("✅ Has sido desbloqueado por el profesor. Ten más cuidado.");
             
             if (document.documentElement.requestFullscreen) {
               document.documentElement.requestFullscreen().catch(() => {});
@@ -144,6 +151,12 @@ export default function Student() {
     const handleKeyDown = (e) => {
       if (!isExamActiveRef.current) return;
 
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        blockExamRealtime('Presionaste Escape para salir de pantalla completa');
+        return;
+      }
+
       if (e.key === 'Meta' || e.metaKey) {
         e.preventDefault();
         blockExamRealtime('Presionaste la tecla Windows');
@@ -164,7 +177,7 @@ export default function Student() {
 
       if (e.key === 'F11') {
         e.preventDefault();
-        blockExamRealtime('Intentaste salir de pantalla completa (F11)');
+        blockExamRealtime('Intentaste cambiar pantalla completa con F11');
         return;
       }
 
@@ -229,21 +242,35 @@ export default function Student() {
   }, [exam, fin, showReview, isBlocked]);
 
   const blockExamRealtime = async (reason) => {
-    if (isBlocked || fin || hasSubmittedRef.current) return;
+    if (isBlocked || fin || hasSubmittedRef.current || blockingInProgressRef.current) return;
     
-    console.warn('🚫 EXAMEN BLOQUEADO:', reason);
+    console.warn('🚫 BLOQUEANDO EXAMEN:', reason);
     
+    // 🔥 Marcar que estamos bloqueando
+    blockingInProgressRef.current = true;
+    isExamActiveRef.current = false;
+    
+    // 🔥 Bloquear UI INMEDIATAMENTE
     setIsBlocked(true);
     setBlockReason(reason);
     addViolationRealtime(reason);
     
-    if (intervalRef.current) clearInterval(intervalRef.current);
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
 
+    // 🔥 Notificar a Firebase
     try {
       await blockStudent(exam.code, user.uid || user.email, reason);
-      console.log('✅ Profesor notificado en tiempo real');
+      console.log('✅ Profesor notificado en Firebase');
     } catch (error) {
-      console.error('Error al notificar al profesor:', error);
+      console.error('Error al notificar bloqueo:', error);
+    } finally {
+      // 🔥 Esperar un momento antes de permitir cambios
+      setTimeout(() => {
+        blockingInProgressRef.current = false;
+      }, 2000);
     }
   };
 
@@ -307,6 +334,8 @@ export default function Student() {
         setExam(response.exam);
         setAns({});
         setViolations([]);
+        setIsBlocked(false);
+        blockingInProgressRef.current = false;
         hasSubmittedRef.current = false;
       } else {
         alert("❌ Código inválido");
@@ -414,6 +443,7 @@ export default function Student() {
     setViolations([]);
     hasSubmittedRef.current = false;
     isExamActiveRef.current = false;
+    blockingInProgressRef.current = false;
     if (intervalRef.current) clearInterval(intervalRef.current);
     if (unsubscribeBlockRef.current) unsubscribeBlockRef.current();
   };
@@ -467,6 +497,7 @@ export default function Student() {
               <li>• Serás monitoreado en tiempo real</li>
               <li>• No salgas de la ventana del examen</li>
               <li>• El profesor verá tus acciones instantáneamente</li>
+              <li>• No presiones Escape ni salgas de pantalla completa</li>
             </ul>
           </div>
         </div>
@@ -474,26 +505,49 @@ export default function Student() {
     );
   }
 
-  // PANTALLA: BLOQUEADO
+  // PANTALLA: BLOQUEADO - PANTALLA COMPLETA BLOQUEANTE
   if (isBlocked) {
     return (
-      <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="max-w-2xl mx-auto">
-        <div className="bg-gradient-to-br from-red-500 to-red-700 p-8 rounded-2xl shadow-2xl text-white">
-          <div className="text-center">
-            <div className="text-7xl mb-4">🚫</div>
-            <h2 className="text-3xl font-bold mb-4">Examen Bloqueado</h2>
-            <div className="bg-white/20 backdrop-blur p-4 rounded-xl mb-6">
-              <p className="text-xl font-semibold mb-2">Razón:</p>
-              <p className="text-lg">{blockReason}</p>
+      <motion.div 
+        initial={{ opacity: 0 }} 
+        animate={{ opacity: 1 }}
+        className="fixed inset-0 z-[9999] flex items-center justify-center"
+        style={{ 
+          background: 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)',
+          isolation: 'isolate'
+        }}
+      >
+        <div className="max-w-2xl mx-auto px-4">
+          <motion.div
+            initial={{ scale: 0.8 }}
+            animate={{ scale: 1 }}
+            transition={{ type: "spring", stiffness: 200 }}
+            className="text-center text-white"
+          >
+            <motion.div 
+              className="text-9xl mb-6"
+              animate={{ rotate: [0, -10, 10, -10, 0] }}
+              transition={{ repeat: Infinity, duration: 2 }}
+            >
+              🚫
+            </motion.div>
+            
+            <h1 className="text-5xl font-black mb-4 drop-shadow-lg">
+              EXAMEN BLOQUEADO
+            </h1>
+            
+            <div className="bg-white/20 backdrop-blur-xl p-6 rounded-2xl mb-6 border-4 border-white/30">
+              <p className="text-2xl font-bold mb-3">Razón del bloqueo:</p>
+              <p className="text-xl">{blockReason}</p>
             </div>
 
             {violations.length > 0 && (
-              <div className="bg-white/10 p-4 rounded-xl mb-4 text-left">
-                <p className="font-semibold mb-2">Historial de violaciones:</p>
-                <div className="space-y-1 max-h-40 overflow-y-auto">
+              <div className="bg-white/10 backdrop-blur-xl p-5 rounded-2xl mb-6 text-left max-w-md mx-auto">
+                <p className="font-bold mb-3 text-lg">📋 Historial de violaciones ({violations.length}):</p>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
                   {violations.map((v, idx) => (
-                    <div key={idx} className="text-xs bg-white/10 p-2 rounded">
-                      • {v.reason}
+                    <div key={idx} className="text-sm bg-white/10 p-3 rounded-lg">
+                      <span className="font-bold">{idx + 1}.</span> {v.reason}
                     </div>
                   ))}
                 </div>
@@ -502,52 +556,71 @@ export default function Student() {
 
             <button
               onClick={() => setShowMessageModal(true)}
-              className="btn bg-white text-red-600 hover:bg-gray-100 w-full"
+              className="bg-white text-red-600 hover:bg-gray-100 px-8 py-4 rounded-xl font-bold text-lg shadow-2xl transition transform hover:scale-105 mb-6"
             >
               💬 Enviar mensaje al profesor
             </button>
 
-            <p className="text-xs opacity-80 mt-4">
-              El profesor fue notificado automáticamente. Espera a que te desbloquee.
-              <br />
-              <span className="font-semibold">⚠️ Si te desbloquea, el sistema antifraude seguirá activo.</span>
-            </p>
-          </div>
+            <div className="bg-white/10 backdrop-blur-xl p-4 rounded-xl max-w-md mx-auto">
+              <p className="text-sm font-bold mb-2">
+                ⚠️ INFORMACIÓN IMPORTANTE
+              </p>
+              <ul className="text-xs space-y-1 text-left">
+                <li>• El profesor ha sido notificado automáticamente</li>
+                <li>• Tu examen está pausado y guardado</li>
+                <li>• Espera a que el profesor revise tu caso</li>
+                <li>• Si cierras esta página, seguirás bloqueado</li>
+                <li>• El sistema antifraude seguirá activo después del desbloqueo</li>
+              </ul>
+            </div>
+          </motion.div>
         </div>
 
+        {/* Modal mensaje */}
         <AnimatePresence>
           {showMessageModal && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+              className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[10000] p-4"
               onClick={() => setShowMessageModal(false)}
             >
               <motion.div
-                initial={{ scale: 0.9 }}
-                animate={{ scale: 1 }}
-                exit={{ scale: 0.9 }}
-                className="card max-w-md w-full"
+                initial={{ scale: 0.9, y: 50 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.9, y: 50 }}
+                className="bg-white dark:bg-gray-800 rounded-2xl p-8 max-w-md w-full shadow-2xl"
                 onClick={(e) => e.stopPropagation()}
               >
-                <h3 className="text-xl font-bold mb-4">Mensaje al profesor</h3>
+                <h3 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">
+                  Enviar mensaje al profesor
+                </h3>
+                
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+                  Explica tu situación. El profesor recibirá tu mensaje en tiempo real.
+                </p>
+
                 <textarea
-                  className="input w-full resize-none"
-                  rows="4"
-                  placeholder="Explica tu situación..."
+                  className="input w-full resize-none text-base"
+                  rows="5"
+                  placeholder="Escribe tu mensaje aquí..."
                   value={blockMessage}
                   onChange={(e) => setBlockMessage(e.target.value)}
                   autoFocus
                 />
-                <div className="flex gap-3 mt-4">
-                  <button onClick={() => setShowMessageModal(false)} className="btn btn-outline flex-1">
+
+                <div className="flex gap-3 mt-6">
+                  <button
+                    onClick={() => setShowMessageModal(false)}
+                    className="btn btn-outline flex-1 text-base py-3"
+                  >
                     Cancelar
                   </button>
                   <button
                     onClick={sendMessageToTeacherRealtime}
                     disabled={!blockMessage.trim()}
-                    className="btn btn-primary flex-1"
+                    className="btn btn-primary flex-1 text-base py-3 disabled:opacity-50"
                   >
                     ✅ Enviar
                   </button>
