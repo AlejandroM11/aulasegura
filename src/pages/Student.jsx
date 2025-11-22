@@ -60,11 +60,28 @@ export default function Student() {
             // ✅ El profesor lo desbloqueó en tiempo real
             setIsBlocked(false);
             setBlockReason("");
-            alert("✅ Has sido desbloqueado por el profesor. Puedes continuar.");
+            alert("✅ Has sido desbloqueado por el profesor. Puedes continuar con precaución.");
             
             // Reactivar pantalla completa
             if (document.documentElement.requestFullscreen) {
               document.documentElement.requestFullscreen().catch(() => {});
+            }
+            
+            // 🔥 REACTIVAR el sistema antifraude inmediatamente
+            isExamActiveRef.current = true;
+            
+            // Reiniciar el timer si estaba pausado
+            if (!intervalRef.current && t > 0) {
+              intervalRef.current = setInterval(() => {
+                setT((x) => {
+                  if (x <= 1) {
+                    clearInterval(intervalRef.current);
+                    if (!hasSubmittedRef.current) finishExam(true);
+                    return 0;
+                  }
+                  return x - 1;
+                });
+              }, 1000);
             }
           }
         }
