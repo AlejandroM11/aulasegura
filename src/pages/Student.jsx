@@ -32,7 +32,7 @@ export default function Student() {
   const intervalRef = useRef(null);
   const isExamActiveRef = useRef(false);
   const unsubscribeBlockRef = useRef(null);
-  const blockingInProgressRef = useRef(false); // 🔥 NUEVO: Evitar desbloqueos accidentales
+  const isCurrentlyBlockedRef = useRef(false); // 🔥 NUEVO: Referencia para bloqueo actual
 
   // Cleanup al desmontar o cerrar pestaña
   useEffect(() => {
@@ -72,27 +72,36 @@ export default function Student() {
         exam.code,
         user.uid || user.email,
         (blocked, reason) => {
-          console.log("📡 Firebase dice:", { blocked, reason, currentlyBlocked: isBlocked });
+          console.log("📡 Firebase cambió estado de bloqueo:", { blocked, reason });
           
-          // 🔥 CRÍTICO: Solo desbloquear si NO estamos en proceso de bloqueo
-          if (blocked && !blockingInProgressRef.current) {
-            console.log("🚫 BLOQUEADO por Firebase");
+          // 🔥 CRÍTICO: Solo actuar si el estado REALMENTE cambió
+          if (blocked && !isCurrentlyBlockedRef.current) {
+            // Firebase dice que AHORA está bloqueado y antes NO lo estaba
+            console.log("🚫 BLOQUEANDO - Firebase confirmó");
+            isCurrentlyBlockedRef.current = true;
             setIsBlocked(true);
-            setBlockReason(reason || "Bloqueado por el sistema");
-            blockingInProgressRef.current = false;
-          } else if (!blocked && isBlocked && !blockingInProgressRef.current) {
-            // ✅ Profesor lo desbloqueó REALMENTE
-            console.log("✅ DESBLOQUEADO por el profesor");
+            setBlockReason(reason || "Bloqueado por violación");
+            isExamActiveRef.current = false;
+            if (intervalRef.current) {
+              clearInterval(intervalRef.current);
+              intervalRef.current = null;
+            }
+          } else if (!blocked && isCurrentlyBlockedRef.current) {
+            // Firebase dice que AHORA está desbloqueado y antes SÍ lo estaba
+            console.log("✅ DESBLOQUEANDO - Profesor lo autorizó");
+            isCurrentlyBlockedRef.current = false;
             setIsBlocked(false);
             setBlockReason("");
             alert("✅ Has sido desbloqueado por el profesor. Ten más cuidado.");
             
+            // Reactivar pantalla completa
             if (document.documentElement.requestFullscreen) {
               document.documentElement.requestFullscreen().catch(() => {});
             }
             
             isExamActiveRef.current = true;
             
+            // Reiniciar el timer
             if (!intervalRef.current && t > 0) {
               intervalRef.current = setInterval(() => {
                 setT((x) => {
@@ -106,11 +115,13 @@ export default function Student() {
               }, 1000);
             }
           }
+          // 🔥 Si ambos estados son iguales, no hacer nada (evita loops)
         }
       );
 
       unsubscribeBlockRef.current = unsubscribe;
 
+      // Actualizar estado cada 5 segundos
       const statusInterval = setInterval(() => {
         const answeredCount = Object.keys(ans).filter(
           k => ans[k] !== undefined && ans[k] !== ""
@@ -131,7 +142,7 @@ export default function Student() {
         }
       };
     }
-  }, [exam, user, fin, showReview, ans, t, violations, isBlocked]);
+  }, [exam, user, fin, showReview, ans, t, violations]);
 
   // Sistema antifraude
   useEffect(() => {
@@ -242,12 +253,16 @@ export default function Student() {
   }, [exam, fin, showReview, isBlocked]);
 
   const blockExamRealtime = async (reason) => {
-    if (isBlocked || fin || hasSubmittedRef.current || blockingInProgressRef.current) return;
+    // 🔥 Si ya está bloqueado, no volver a bloquear
+    if (isCurrentlyBlockedRef.current || fin || hasSubmittedRef.current) {
+      console.log("⚠️ Ya está bloqueado, ignorando bloqueo duplicado");
+      return;
+    }
     
     console.warn('🚫 BLOQUEANDO EXAMEN:', reason);
     
-    // 🔥 Marcar que estamos bloqueando
-    blockingInProgressRef.current = true;
+    // 🔥 Marcar INMEDIATAMENTE como bloqueado
+    isCurrentlyBlockedRef.current = true;
     isExamActiveRef.current = false;
     
     // 🔥 Bloquear UI INMEDIATAMENTE
@@ -255,22 +270,18 @@ export default function Student() {
     setBlockReason(reason);
     addViolationRealtime(reason);
     
+    // Detener timer
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
 
-    // 🔥 Notificar a Firebase
+    // 🔥 Notificar a Firebase (esto NO debe cambiar el estado local)
     try {
       await blockStudent(exam.code, user.uid || user.email, reason);
-      console.log('✅ Profesor notificado en Firebase');
+      console.log('✅ Bloqueo registrado en Firebase');
     } catch (error) {
-      console.error('Error al notificar bloqueo:', error);
-    } finally {
-      // 🔥 Esperar un momento antes de permitir cambios
-      setTimeout(() => {
-        blockingInProgressRef.current = false;
-      }, 2000);
+      console.error('Error al registrar bloqueo en Firebase:', error);
     }
   };
 
@@ -335,7 +346,7 @@ export default function Student() {
         setAns({});
         setViolations([]);
         setIsBlocked(false);
-        blockingInProgressRef.current = false;
+        isCurrentlyBlockedRef.current = false;
         hasSubmittedRef.current = false;
       } else {
         alert("❌ Código inválido");
@@ -443,7 +454,7 @@ export default function Student() {
     setViolations([]);
     hasSubmittedRef.current = false;
     isExamActiveRef.current = false;
-    blockingInProgressRef.current = false;
+    isCurrentlyBlockedRef.current = false;
     if (intervalRef.current) clearInterval(intervalRef.current);
     if (unsubscribeBlockRef.current) unsubscribeBlockRef.current();
   };
@@ -456,7 +467,7 @@ export default function Student() {
 
     try {
       await sendMessageToTeacher(exam.code, user.uid || user.email, blockMessage);
-      alert("✅ Mensaje enviado. El profesor lo verá instantáneamente.");
+      alert("✅ Mensaje enviado al profesor. Espera su respuesta.");
       setBlockMessage("");
       setShowMessageModal(false);
     } catch (error) {
@@ -498,6 +509,7 @@ export default function Student() {
               <li>• No salgas de la ventana del examen</li>
               <li>• El profesor verá tus acciones instantáneamente</li>
               <li>• No presiones Escape ni salgas de pantalla completa</li>
+              <li>• Si te bloquean, solo el profesor puede desbloquearte</li>
             </ul>
           </div>
         </div>
@@ -505,7 +517,7 @@ export default function Student() {
     );
   }
 
-  // PANTALLA: BLOQUEADO - PANTALLA COMPLETA BLOQUEANTE
+  // PANTALLA: BLOQUEADO
   if (isBlocked) {
     return (
       <motion.div 
@@ -568,8 +580,8 @@ export default function Student() {
               <ul className="text-xs space-y-1 text-left">
                 <li>• El profesor ha sido notificado automáticamente</li>
                 <li>• Tu examen está pausado y guardado</li>
-                <li>• Espera a que el profesor revise tu caso</li>
-                <li>• Si cierras esta página, seguirás bloqueado</li>
+                <li>• Solo el profesor puede desbloquearte</li>
+                <li>• Si cierras esta página, seguirás bloqueado al recargar</li>
                 <li>• El sistema antifraude seguirá activo después del desbloqueo</li>
               </ul>
             </div>

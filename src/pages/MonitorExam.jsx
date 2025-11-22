@@ -20,13 +20,12 @@ export default function MonitorExam() {
   const [loading, setLoading] = useState(true);
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [responseText, setResponseText] = useState("");
+  const [unblocking, setUnblocking] = useState(false);
 
-  // Cargar exámenes disponibles
   useEffect(() => {
     loadExams();
   }, []);
 
-  // Escuchar estudiantes y mensajes en tiempo real
   useEffect(() => {
     if (!selectedExam) return;
 
@@ -39,7 +38,7 @@ export default function MonitorExam() {
         const activeStudents = students.filter(student => {
           const lastActivity = student.lastActivity || student.joinedAt;
           const timeSinceActivity = now - lastActivity;
-          return timeSinceActivity < 30000; // Activo si tuvo actividad en últimos 30s
+          return timeSinceActivity < 30000;
         });
         
         console.log(`✅ ${activeStudents.length} estudiantes activos de ${students.length}`);
@@ -56,7 +55,6 @@ export default function MonitorExam() {
       }
     );
 
-    // Limpiador automático cada 10 segundos
     const cleanupInterval = setInterval(async () => {
       const now = Date.now();
       allStudents.forEach(async (student) => {
@@ -94,15 +92,23 @@ export default function MonitorExam() {
   };
 
   const handleUnblockStudent = async (student) => {
-    if (!window.confirm(`¿Desbloquear a ${student.name}?`)) return;
+    if (!window.confirm(`¿Desbloquear a ${student.name}?\n\nEl estudiante podrá continuar su examen inmediatamente.`)) return;
 
+    setUnblocking(true);
+    
     try {
+      console.log("🔓 Desbloqueando estudiante:", student.name);
+      
+      // 🔥 Desbloquear en Firebase
       await unblockStudentDB(selectedExam.code, student.id);
-      console.log("✅ Estudiante desbloqueado:", student.name);
-      alert(`✅ ${student.name} ha sido desbloqueado y puede continuar`);
+      
+      console.log("✅ Estudiante desbloqueado exitosamente");
+      alert(`✅ ${student.name} ha sido desbloqueado.\n\nEl estudiante recibirá una notificación instantánea y podrá continuar.`);
     } catch (error) {
-      console.error("Error al desbloquear:", error);
-      alert("❌ Error al desbloquear al estudiante");
+      console.error("❌ Error al desbloquear:", error);
+      alert("❌ Error al desbloquear al estudiante. Intenta nuevamente.");
+    } finally {
+      setUnblocking(false);
     }
   };
 
@@ -123,7 +129,6 @@ export default function MonitorExam() {
     }
   };
 
-  // Calcular estadísticas
   const activeStudents = allStudents.filter(s => s.status === 'active' && !s.isBlocked);
   const blockedStudents = allStudents.filter(s => s.isBlocked);
   const totalStudents = allStudents.length;
@@ -146,7 +151,6 @@ export default function MonitorExam() {
     return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
   };
 
-  // PANTALLA DE CARGA
   if (loading) {
     return (
       <div className="text-center py-20">
@@ -156,7 +160,6 @@ export default function MonitorExam() {
     );
   }
 
-  // SELECCIÓN DE EXAMEN
   if (!selectedExam) {
     return (
       <div className="max-w-4xl mx-auto">
@@ -212,10 +215,8 @@ export default function MonitorExam() {
     );
   }
 
-  // PANEL DE MONITOREO ACTIVO
   return (
     <div className="max-w-7xl mx-auto">
-      {/* Header */}
       <div className="flex items-center justify-between mb-6 p-4 bg-gradient-to-r from-blue-600 to-blue-700 rounded-xl text-white shadow-lg">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
@@ -234,7 +235,6 @@ export default function MonitorExam() {
         </button>
       </div>
 
-      {/* Estadísticas rápidas */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <motion.div 
           initial={{ opacity: 0, y: 20 }}
@@ -282,9 +282,7 @@ export default function MonitorExam() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Estudiantes activos y bloqueados */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Estudiantes activos */}
           <div className="card">
             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
               <span className="w-3 h-3 bg-green-500 rounded-full animate-pulse"></span>
@@ -362,7 +360,6 @@ export default function MonitorExam() {
             )}
           </div>
 
-          {/* Estudiantes bloqueados */}
           <div className="card">
             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
               🚫 Estudiantes bloqueados
@@ -402,9 +399,10 @@ export default function MonitorExam() {
                         </div>
                         <button
                           onClick={() => handleUnblockStudent(student)}
-                          className="btn btn-primary bg-green-600 hover:bg-green-700 text-sm px-4 py-2 shadow-lg"
+                          disabled={unblocking}
+                          className="btn btn-primary bg-green-600 hover:bg-green-700 text-sm px-4 py-2 shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          ✅ Desbloquear
+                          {unblocking ? "⏳ Desbloqueando..." : "✅ Desbloquear"}
                         </button>
                       </div>
 
@@ -437,7 +435,6 @@ export default function MonitorExam() {
           </div>
         </div>
 
-        {/* Panel de mensajes */}
         <div className="lg:col-span-1">
           <div className="card sticky top-6">
             <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
@@ -510,7 +507,6 @@ export default function MonitorExam() {
         </div>
       </div>
 
-      {/* Modal para responder mensajes */}
       <AnimatePresence>
         {selectedStudent && (
           <motion.div
