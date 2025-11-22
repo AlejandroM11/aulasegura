@@ -1,4 +1,4 @@
-import { db, setCorsHeaders } from "../_lib/firebase.js";
+import { db, setCorsHeaders } from "../_lib/firebase";
 
 export default async function handler(req, res) {
   setCorsHeaders(res);
@@ -22,7 +22,6 @@ export default async function handler(req, res) {
     if (req.method === 'POST') {
       const { title, code, durationMinutes, questions, teacherId } = req.body;
 
-      // Validaciones
       if (!title || !code || !durationMinutes || !questions) {
         return res.status(400).json({
           ok: false,
@@ -30,7 +29,6 @@ export default async function handler(req, res) {
         });
       }
 
-      // Verificar que el código no esté duplicado
       const existingExam = await db.collection("exams")
         .where("code", "==", code.toUpperCase())
         .get();

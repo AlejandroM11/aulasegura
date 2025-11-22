@@ -1,4 +1,4 @@
-import { db, auth, setCorsHeaders } from "../_lib/firebase.js";
+import { db, auth, setCorsHeaders } from "../_lib/firebase";
 
 export default async function handler(req, res) {
   setCorsHeaders(res);
@@ -8,7 +8,10 @@ export default async function handler(req, res) {
   }
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: "Method not allowed" });
+    return res.status(405).json({ 
+      error: "Method not allowed",
+      received: req.method 
+    });
   }
 
   try {
@@ -41,7 +44,7 @@ export default async function handler(req, res) {
       email,
       name: name || email.split("@")[0],
       role,
-      password, // ⚠️ Solo para desarrollo
+      password,
       createdAt: new Date().toISOString(),
       fromGoogle: false
     });
