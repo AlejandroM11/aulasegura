@@ -2,9 +2,7 @@ import { useState } from "react";
 import { setUser } from "../lib/auth";
 import { useNavigate, Link } from "react-router-dom";
 import { loginWithGoogle } from "../lib/firebase";
-import axios from "axios";
-
-const API_URL = "http://localhost:3000/api";
+import { apiLogin } from "../lib/api";
 
 export default function Login() {
   const [email, setEmail] = useState("");
@@ -17,22 +15,27 @@ export default function Login() {
     setLoading(true);
 
     try {
-      // 🔵 Buscar usuario en Firestore a través del backend
-      const response = await axios.get(`${API_URL}/usuarios`);
-      const users = response.data;
+      // 🔵 Usar el endpoint de login correcto
+      const response = await apiLogin({ email, password: pw });
 
-      // Buscar usuario con email y password
-      const user = users.find((u) => u.email === email && u.password === pw);
-
-      if (user) {
-        setUser(user);
-        nav(user.role === "docente" ? "/docente" : "/estudiante");
+      if (response.ok && response.user) {
+        // Guardar usuario en localStorage
+        setUser(response.user);
+        
+        // Redirigir según el rol
+        nav(response.user.role === "docente" ? "/docente" : "/estudiante");
       } else {
-        alert("❌ Credenciales inválidas");
+        alert("❌ " + (response.error || "Error al iniciar sesión"));
       }
     } catch (err) {
       console.error("Error al iniciar sesión:", err);
-      alert("❌ Error al iniciar sesión: " + (err.response?.data?.error || err.message));
+      
+      const errorMsg = err.response?.data?.error 
+        || err.response?.data?.message
+        || err.message 
+        || "Error al iniciar sesión";
+      
+      alert("❌ " + errorMsg);
     } finally {
       setLoading(false);
     }
