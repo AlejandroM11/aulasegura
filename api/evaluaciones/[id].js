@@ -1,4 +1,4 @@
-import { db, setCorsHeaders } from "../_lib/firebase";
+import { db, setCorsHeaders } from "../_lib/firebase.js";
 
 export default async function handler(req, res) {
   setCorsHeaders(res);
