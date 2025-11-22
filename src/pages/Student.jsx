@@ -50,17 +50,29 @@ export default function Student() {
 
     setLoading(true);
     try {
-      const response = await apiGetExamByCode(code.trim());
+      console.log("🔍 Buscando examen con código:", code.trim().toUpperCase());
+      
+      const response = await apiGetExamByCode(code.trim().toUpperCase());
+      
+      console.log("📦 Respuesta del servidor:", response);
       
       if (response.ok && response.exam) {
+        console.log("✅ Examen encontrado:", response.exam);
         setExam(response.exam);
         setAns({});
       } else {
-        alert("Código inválido o examen no encontrado");
+        console.error("❌ Examen no encontrado:", response);
+        alert("❌ Código inválido o examen no encontrado");
       }
     } catch (error) {
-      console.error("Error al buscar examen:", error);
-      alert("Error al buscar el examen. Verifica el código.");
+      console.error("❌ Error al buscar examen:", error);
+      console.error("Response data:", error.response?.data);
+      
+      const errorMsg = error.response?.data?.error 
+        || error.message 
+        || "Error al buscar el examen";
+      
+      alert("❌ " + errorMsg + "\nVerifica el código e intenta de nuevo.");
     } finally {
       setLoading(false);
     }
@@ -126,7 +138,9 @@ export default function Student() {
               placeholder="Código del examen"
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase())}
+              onKeyPress={(e) => e.key === 'Enter' && join()}
               disabled={loading}
+              autoFocus
             />
 
             <button
@@ -142,6 +156,13 @@ export default function Student() {
             Ejemplo:{" "}
             <b className="text-blue-600 dark:text-blue-400">ABC123</b>
           </p>
+
+          {loading && (
+            <div className="mt-4 text-center">
+              <div className="inline-block animate-spin rounded-full h-6 w-6 border-4 border-blue-600 border-t-transparent"></div>
+              <p className="mt-2 text-sm text-gray-600">Buscando examen...</p>
+            </div>
+          )}
         </div>
       </motion.div>
     );
