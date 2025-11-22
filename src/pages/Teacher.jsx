@@ -23,6 +23,7 @@ export default function Teacher() {
   const [title, setTitle] = useState("");
   const [code, setCode] = useState("");
   const [dur, setDur] = useState(30);
+  const [showCorrectAnswers, setShowCorrectAnswers] = useState(false); // 🆕 Nueva configuración
 
   const [questions, setQuestions] = useState([]);
   const [qtext, setQtext] = useState("");
@@ -68,7 +69,6 @@ export default function Teacher() {
     setCorrectIndex(0);
   };
 
-  // 🔵 CORREGIDO: Guardar examen (crear o actualizar)
   const saveExam = async () => {
     if (!title.trim() || !code.trim() || questions.length === 0) {
       return alert("Completa todos los campos y agrega al menos una pregunta");
@@ -82,19 +82,17 @@ export default function Teacher() {
         code: code.trim().toUpperCase(),
         durationMinutes: Number(dur),
         questions,
+        showCorrectAnswers, // 🆕 Guardar configuración
         teacherId: user?.uid || user?.email
       };
 
       if (selectedExam) {
-        // 🔵 ACTUALIZAR EXAMEN EXISTENTE
         console.log("📝 Actualizando examen:", selectedExam.id, examData);
         await apiUpdateExam(selectedExam.id, examData);
         alert("✅ Examen actualizado exitosamente");
       } else {
-        // 🔵 CREAR NUEVO EXAMEN
         console.log("📝 Creando nuevo examen:", examData);
         
-        // Verificar que el código no exista
         const existingExam = exams.find(
           e => e.code.toUpperCase() === code.trim().toUpperCase()
         );
@@ -109,12 +107,9 @@ export default function Teacher() {
         alert("✅ Examen creado exitosamente");
       }
 
-      // Recargar lista de exámenes
       await loadExams();
-
-      // Resetear formulario
       resetForm();
-      setActive("lista"); // Ir a la lista para ver el resultado
+      setActive("lista");
     } catch (error) {
       console.error("Error al guardar examen:", error);
       const errorMsg = error.response?.data?.error || error.message || "Error al guardar el examen";
@@ -134,7 +129,6 @@ export default function Teacher() {
       alert("✅ Examen eliminado");
       await loadExams();
       
-      // Si estábamos editando este examen, resetear
       if (selectedExam && selectedExam.id === exam.id) {
         resetForm();
       }
@@ -151,6 +145,7 @@ export default function Teacher() {
     setCode(exam.code);
     setDur(exam.durationMinutes);
     setQuestions(exam.questions || []);
+    setShowCorrectAnswers(exam.showCorrectAnswers || false); // 🆕 Cargar configuración
     setActive("crear");
   };
 
@@ -163,6 +158,7 @@ export default function Teacher() {
     setQtext("");
     setOptionsRaw("Opción A;Opción B");
     setCorrectIndex(0);
+    setShowCorrectAnswers(false); // 🆕 Resetear configuración
   };
 
   const filtered = useMemo(
@@ -175,13 +171,13 @@ export default function Teacher() {
   return (
     <div className="space-y-6">
       {/* Tabs */}
-      <div className="flex gap-2">
+      <div className="flex gap-2 flex-wrap">
         <button 
           className={`tab ${active === "crear" ? "tab-active" : ""}`} 
           onClick={() => { 
             setActive("crear"); 
             if (!selectedExam) {
-              resetForm(); // Solo resetear si no hay examen seleccionado
+              resetForm();
             }
           }}
         >
@@ -198,6 +194,13 @@ export default function Teacher() {
           onClick={() => navigate("/resultados")}
         >
           📊 Resultados
+        </button>
+        {/* 🆕 Botón de monitoreo */}
+        <button 
+          className="tab"
+          onClick={() => navigate("/monitor")}
+        >
+          📡 Monitoreo en Tiempo Real
         </button>
       </div>
 
@@ -240,7 +243,7 @@ export default function Teacher() {
               placeholder="Código (ej: ABC123)" 
               value={code} 
               onChange={e => setCode(e.target.value.toUpperCase())}
-              disabled={!!selectedExam} // 🔵 No permitir cambiar código al editar
+              disabled={!!selectedExam}
             />
             <input 
               className="input" 
@@ -257,6 +260,24 @@ export default function Teacher() {
               💡 No puedes cambiar el código de un examen existente
             </p>
           )}
+
+          {/* 🆕 Configuración de mostrar respuestas */}
+          <div className="mt-4 p-4 border rounded-xl bg-blue-50 dark:bg-blue-900/20">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input 
+                type="checkbox"
+                checked={showCorrectAnswers}
+                onChange={(e) => setShowCorrectAnswers(e.target.checked)}
+                className="w-5 h-5 rounded"
+              />
+              <div>
+                <p className="font-semibold">Mostrar respuestas correctas al estudiante</p>
+                <p className="text-sm text-gray-600">
+                  Si activas esta opción, el estudiante verá las respuestas correctas al finalizar el examen
+                </p>
+              </div>
+            </label>
+          </div>
 
           {/* Agregar preguntas */}
           <div className="mt-4 p-4 border rounded-xl bg-gray-50 dark:bg-gray-800">
@@ -407,13 +428,14 @@ export default function Teacher() {
                     <th className="p-3 text-left">Título</th>
                     <th className="p-3 text-left">Duración</th>
                     <th className="p-3 text-left">Preguntas</th>
+                    <th className="p-3 text-left">Config</th>
                     <th className="p-3 text-left">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="text-center py-6 text-gray-500">
+                      <td colSpan={6} className="text-center py-6 text-gray-500">
                         {filter ? "No se encontraron exámenes" : "No hay exámenes registrados"}
                       </td>
                     </tr>
@@ -427,6 +449,17 @@ export default function Teacher() {
                         <td className="p-3">{e.title}</td>
                         <td className="p-3">{e.durationMinutes} min</td>
                         <td className="p-3">{e.questions?.length || 0}</td>
+                        <td className="p-3">
+                          {e.showCorrectAnswers ? (
+                            <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full">
+                              ✅ Muestra respuestas
+                            </span>
+                          ) : (
+                            <span className="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded-full">
+                              🔒 Oculta respuestas
+                            </span>
+                          )}
+                        </td>
                         <td className="p-3 flex gap-2">
                           <button 
                             className="btn btn-outline text-xs" 

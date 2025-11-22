@@ -1,8 +1,7 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { apiGetExamByCode, apiCreateSubmission } from "../lib/api";
 import { getUser } from "../lib/auth";
-import useExamGuard from "../hooks/useExamGuard";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 
 export default function Student() {
   const [code, setCode] = useState("");
@@ -11,52 +10,90 @@ export default function Student() {
   const [t, setT] = useState(0);
   const [fin, setFin] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [submitting, setSubmitting] = useState(false); // 🔵 NUEVO: prevenir doble envío
+  const [submitting, setSubmitting] = useState(false);
+  const [showReview, setShowReview] = useState(false); // 🆕 Modo revisión
+  const [showSuccess, setShowSuccess] = useState(false); // 🆕 Pantalla de éxito
+  const [isBlocked, setIsBlocked] = useState(false); // 🆕 Estado de bloqueo
+  const [blockMessage, setBlockMessage] = useState(""); // 🆕 Mensaje al profesor
+  const [actualTimeOutside, setActualTimeOutside] = useState(0); // 🆕 Tiempo real fuera
   
   const user = getUser();
-  const hasSubmittedRef = useRef(false); // 🔵 NUEVO: track si ya envió
-  
-  // 🔵 CORREGIDO: Limitar tiempo fuera a máximo 30 segundos
-  const timeOutside = useExamGuard(useCallback(() => {
-    if (!fin && !hasSubmittedRef.current) {
-      finish(true);
-    }
-  }, [fin]));
+  const hasSubmittedRef = useRef(false);
+  const timeOutsideRef = useRef(0);
+  const intervalRef = useRef(null);
+  const lastBlurTime = useRef(null);
 
-  // Formatear tiempo fuera con límite
-  const formattedTimeOutside = Math.min(timeOutside, 30000);
-
+  // 🆕 Control manual del tiempo fuera
   useEffect(() => {
-    let iv;
-    if (exam && !fin) {
+    if (!exam || fin) return;
+
+    const handleBlur = () => {
+      lastBlurTime.current = Date.now();
+    };
+
+    const handleFocus = () => {
+      if (lastBlurTime.current) {
+        const timeOut = Date.now() - lastBlurTime.current;
+        timeOutsideRef.current += timeOut;
+        setActualTimeOutside(timeOutsideRef.current);
+        lastBlurTime.current = null;
+
+        // 🆕 Bloquear si está más de 10 segundos fuera
+        if (timeOutsideRef.current > 10000 && !isBlocked) {
+          setIsBlocked(true);
+        }
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.hidden) {
+        handleBlur();
+      } else {
+        handleFocus();
+      }
+    };
+
+    window.addEventListener('blur', handleBlur);
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.removeEventListener('blur', handleBlur);
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [exam, fin, isBlocked]);
+
+  // Timer del examen
+  useEffect(() => {
+    if (exam && !fin && !isBlocked) {
       setT(exam.durationMinutes * 60);
 
-      // Pantalla completa al iniciar examen
       if (document.documentElement.requestFullscreen) {
         document.documentElement.requestFullscreen().catch(err => {
           console.log("No se pudo activar pantalla completa:", err);
         });
       }
 
-      iv = setInterval(
-        () =>
-          setT((x) => {
-            if (x <= 1) {
-              clearInterval(iv);
-              if (!hasSubmittedRef.current) {
-                finish(false);
-              }
-              return 0;
+      intervalRef.current = setInterval(() => {
+        setT((x) => {
+          if (x <= 1) {
+            clearInterval(intervalRef.current);
+            if (!hasSubmittedRef.current) {
+              finishExam(true);
             }
-            return x - 1;
-          }),
-        1000
-      );
+            return 0;
+          }
+          return x - 1;
+        });
+      }, 1000);
     }
-    return () => clearInterval(iv);
-  }, [exam]);
+    
+    return () => {
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
+  }, [exam, fin, isBlocked]);
 
-  // 🔵 Unirse al examen desde el backend
   const join = async () => {
     if (!code.trim()) {
       alert("Por favor ingresa un código");
@@ -65,49 +102,60 @@ export default function Student() {
 
     setLoading(true);
     try {
-      console.log("🔍 Buscando examen con código:", code.trim().toUpperCase());
-      
       const response = await apiGetExamByCode(code.trim().toUpperCase());
       
-      console.log("📦 Respuesta del servidor:", response);
-      
       if (response.ok && response.exam) {
-        console.log("✅ Examen encontrado:", response.exam);
         setExam(response.exam);
         setAns({});
-        hasSubmittedRef.current = false; // Reset al unirse
+        hasSubmittedRef.current = false;
+        timeOutsideRef.current = 0;
+        setActualTimeOutside(0);
       } else {
-        console.error("❌ Examen no encontrado:", response);
         alert("❌ Código inválido o examen no encontrado");
       }
     } catch (error) {
-      console.error("❌ Error al buscar examen:", error);
-      console.error("Response data:", error.response?.data);
-      
-      const errorMsg = error.response?.data?.error 
-        || error.message 
-        || "Error al buscar el examen";
-      
-      alert("❌ " + errorMsg + "\nVerifica el código e intenta de nuevo.");
+      const errorMsg = error.response?.data?.error || error.message || "Error al buscar el examen";
+      alert("❌ " + errorMsg);
     } finally {
       setLoading(false);
     }
   };
 
-  const ch = (id, v) =>
-    setAns((a) => ({
-      ...a,
-      [id]: v,
-    }));
+  const ch = (id, v) => setAns((a) => ({ ...a, [id]: v }));
 
-  // 🔵 CORREGIDO: Enviar resultados al backend (prevenir doble envío)
-  const finish = async (forced) => {
+  // 🆕 Abrir página de revisión
+  const openReview = () => {
+    if (intervalRef.current) clearInterval(intervalRef.current);
+    setShowReview(true);
+  };
+
+  // 🆕 Volver del review
+  const closeReview = () => {
+    setShowReview(false);
+    // Reanudar timer
+    if (exam && !fin) {
+      intervalRef.current = setInterval(() => {
+        setT((x) => {
+          if (x <= 1) {
+            clearInterval(intervalRef.current);
+            if (!hasSubmittedRef.current) {
+              finishExam(true);
+            }
+            return 0;
+          }
+          return x - 1;
+        });
+      }, 1000);
+    }
+  };
+
+  // 🆕 Enviar examen (mejorado)
+  const finishExam = async (forced) => {
     if (!exam || hasSubmittedRef.current || submitting) {
-      console.log("⚠️ Envío bloqueado - ya se envió o está en proceso");
       return;
     }
 
-    hasSubmittedRef.current = true; // Marcar como enviado INMEDIATAMENTE
+    hasSubmittedRef.current = true;
     setSubmitting(true);
 
     const submission = {
@@ -118,31 +166,63 @@ export default function Student() {
       studentName: user?.name || "Estudiante",
       submittedAt: new Date().toISOString(),
       answers: ans,
-      timeOutsideMs: Math.min(timeOutside, 30000), // 🔵 Limitar a 30 segundos
+      timeOutsideMs: timeOutsideRef.current, // 🆕 Tiempo real
       forced,
     };
 
     try {
       await apiCreateSubmission(submission);
       setFin(true);
-      alert("✅ Examen enviado exitosamente al docente.");
+      setShowSuccess(true); // 🆕 Mostrar pantalla de éxito
       
       // Salir de pantalla completa
       if (document.fullscreenElement) {
-        document.exitFullscreen().catch(err => {
-          console.log("Error al salir de pantalla completa:", err);
-        });
+        document.exitFullscreen().catch(() => {});
       }
+
+      // 🆕 Salir del examen después de 3 segundos
+      setTimeout(() => {
+        resetExam();
+      }, 3000);
     } catch (error) {
       console.error("Error al enviar examen:", error);
-      hasSubmittedRef.current = false; // Permitir reintento si falla
+      hasSubmittedRef.current = false;
       alert("❌ Error al enviar el examen. Intenta de nuevo.");
     } finally {
       setSubmitting(false);
     }
   };
 
-  // Pantalla de unirse al examen
+  // 🆕 Resetear todo
+  const resetExam = () => {
+    setExam(null);
+    setAns({});
+    setT(0);
+    setFin(false);
+    setShowSuccess(false);
+    setShowReview(false);
+    setIsBlocked(false);
+    setBlockMessage("");
+    setActualTimeOutside(0);
+    timeOutsideRef.current = 0;
+    hasSubmittedRef.current = false;
+    if (intervalRef.current) clearInterval(intervalRef.current);
+  };
+
+  // 🆕 Enviar mensaje al profesor
+  const sendMessageToTeacher = () => {
+    if (!blockMessage.trim()) {
+      alert("Escribe un mensaje");
+      return;
+    }
+
+    // TODO: Implementar envío de mensaje en tiempo real
+    console.log("📨 Mensaje al profesor:", blockMessage);
+    alert("✅ Mensaje enviado al profesor. Espera respuesta...");
+    setBlockMessage("");
+  };
+
+  // Pantalla de unirse
   if (!exam) {
     return (
       <motion.div
@@ -180,8 +260,7 @@ export default function Student() {
           </div>
 
           <p className="mt-3 text-sm text-center text-gray-500 dark:text-gray-400">
-            Ejemplo:{" "}
-            <b className="text-blue-600 dark:text-blue-400">ABC123</b>
+            Ejemplo: <b className="text-blue-600 dark:text-blue-400">ABC123</b>
           </p>
 
           {loading && (
@@ -190,6 +269,155 @@ export default function Student() {
               <p className="mt-2 text-sm text-gray-600">Buscando examen...</p>
             </div>
           )}
+        </div>
+      </motion.div>
+    );
+  }
+
+  // 🆕 Pantalla de éxito
+  if (showSuccess) {
+    return (
+      <motion.div
+        initial={{ scale: 0.8, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        className="max-w-lg mx-auto text-center"
+      >
+        <div className="bg-gradient-to-br from-green-500 to-green-600 p-12 rounded-3xl shadow-2xl text-white">
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            transition={{ delay: 0.2, type: "spring", stiffness: 200 }}
+          >
+            <div className="text-8xl mb-6">✅</div>
+          </motion.div>
+          
+          <h2 className="text-3xl font-bold mb-4">¡Examen enviado!</h2>
+          <p className="text-xl mb-6">Tu examen ha sido enviado exitosamente al docente.</p>
+          
+          <div className="bg-white/20 backdrop-blur rounded-xl p-4 mb-6">
+            <p className="text-sm">Tiempo fuera de la ventana:</p>
+            <p className="text-2xl font-bold">{(actualTimeOutside / 1000).toFixed(1)}s</p>
+          </div>
+
+          <p className="text-sm opacity-90">Redirigiendo en 3 segundos...</p>
+        </div>
+      </motion.div>
+    );
+  }
+
+  // 🆕 Popup de bloqueo
+  if (isBlocked) {
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="fixed inset-0 bg-red-900/90 backdrop-blur-lg flex items-center justify-center z-50"
+      >
+        <motion.div
+          initial={{ scale: 0.8, y: 50 }}
+          animate={{ scale: 1, y: 0 }}
+          className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-2xl max-w-md w-full mx-4"
+        >
+          <div className="text-center mb-6">
+            <div className="text-6xl mb-4">🚫</div>
+            <h2 className="text-2xl font-bold text-red-600 dark:text-red-400 mb-2">
+              Examen bloqueado
+            </h2>
+            <p className="text-gray-600 dark:text-gray-300">
+              Has estado fuera de la ventana por más de 10 segundos
+            </p>
+            <p className="text-sm text-gray-500 mt-2">
+              Tiempo total fuera: <b>{(actualTimeOutside / 1000).toFixed(1)}s</b>
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium mb-2">
+                Envía un mensaje al profesor para desbloquear:
+              </label>
+              <textarea
+                className="input w-full resize-none"
+                rows="4"
+                placeholder="Explica por qué estuviste fuera..."
+                value={blockMessage}
+                onChange={(e) => setBlockMessage(e.target.value)}
+              />
+            </div>
+
+            <button
+              onClick={sendMessageToTeacher}
+              className="btn btn-primary w-full bg-blue-600 hover:bg-blue-700"
+            >
+              📨 Enviar mensaje y solicitar desbloqueo
+            </button>
+
+            <p className="text-xs text-center text-gray-500">
+              El profesor recibirá tu mensaje y decidirá si desbloquearte
+            </p>
+          </div>
+        </motion.div>
+      </motion.div>
+    );
+  }
+
+  // 🆕 Página de revisión
+  if (showReview) {
+    return (
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        className="max-w-4xl mx-auto"
+      >
+        <div className="card">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-2xl font-bold">📋 Revisión de respuestas</h2>
+            <div className="text-lg font-bold text-blue-600">
+              Tiempo: {Math.floor(t / 60)}:{String(t % 60).padStart(2, "0")}
+            </div>
+          </div>
+
+          <div className="space-y-4 mb-6">
+            {exam.questions?.map((q, idx) => (
+              <div key={q.id} className="border rounded-xl p-4 bg-gray-50 dark:bg-gray-800">
+                <p className="font-semibold mb-2">
+                  {idx + 1}. {q.text}
+                </p>
+
+                {q.type === "mc" ? (
+                  <div className="ml-4">
+                    <p className="text-sm text-gray-600 mb-1">Tu respuesta:</p>
+                    <p className="font-medium text-blue-600">
+                      {ans[q.id] !== undefined 
+                        ? q.options[ans[q.id]] 
+                        : "Sin responder"}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="ml-4">
+                    <p className="text-sm text-gray-600 mb-1">Tu respuesta:</p>
+                    <p className="italic">{ans[q.id] || "Sin responder"}</p>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={closeReview}
+              className="btn btn-outline flex-1"
+            >
+              ← Volver a editar
+            </button>
+            <button
+              onClick={() => finishExam(false)}
+              disabled={submitting}
+              className="btn btn-primary flex-1 bg-green-600 hover:bg-green-700"
+            >
+              {submitting ? "Enviando..." : "✅ Confirmar y enviar"}
+            </button>
+          </div>
         </div>
       </motion.div>
     );
@@ -236,7 +464,6 @@ export default function Student() {
                       checked={ans[q.id] === i}
                       onChange={() => ch(q.id, i)}
                       className="w-4 h-4"
-                      disabled={fin}
                     />
                     <span>{op}</span>
                   </label>
@@ -249,7 +476,6 @@ export default function Student() {
                 placeholder="Escribe tu respuesta aquí..."
                 value={ans[q.id] || ""}
                 onChange={(e) => ch(q.id, e.target.value)}
-                disabled={fin}
               />
             )}
           </li>
@@ -258,24 +484,16 @@ export default function Student() {
 
       <div className="mt-6 flex items-center justify-between">
         <button
-          className="btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-          onClick={() => finish(false)}
-          disabled={fin || submitting}
+          className="btn btn-primary bg-blue-600 hover:bg-blue-700"
+          onClick={openReview}
         >
-          {submitting ? "Enviando..." : fin ? "✅ Examen enviado" : "Finalizar examen"}
+          📋 Revisar y enviar
         </button>
 
-        <div className="flex items-center gap-4 text-sm">
-          {/* 🔵 CORREGIDO: Mostrar tiempo limitado y formateado */}
-          <span className={formattedTimeOutside > 10000 ? "text-red-500 font-bold" : "text-gray-600 dark:text-gray-400"}>
-            ⚠️ Tiempo fuera: {(formattedTimeOutside / 1000).toFixed(1)}s
-            {timeOutside >= 30000 && " (máx)"}
+        <div className="text-sm">
+          <span className={actualTimeOutside > 5000 ? "text-red-500 font-bold" : "text-gray-600"}>
+            ⚠️ Tiempo fuera: {(actualTimeOutside / 1000).toFixed(1)}s
           </span>
-          {formattedTimeOutside > 20000 && (
-            <span className="text-red-600 font-bold animate-pulse">
-              ¡Cuidado! Permanece en la página
-            </span>
-          )}
         </div>
       </div>
     </div>

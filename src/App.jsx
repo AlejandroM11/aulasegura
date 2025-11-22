@@ -6,7 +6,8 @@ import Login from "./pages/Login";
 import Register from "./pages/Register";
 import Student from "./pages/Student";
 import Teacher from "./pages/Teacher";
-import Results from "./pages/Results"; // ← 🔵 NUEVO
+import Results from "./pages/Results";
+import MonitorExam from "./pages/MonitorExam"; // 🆕 NUEVO
 import Home from "./pages/Home";
 import { getUser, logout } from "./lib/auth";
 import { ThemeProvider } from "./lib/theme";
@@ -80,12 +81,22 @@ export default function App() {
               }
             />
 
-            {/* 🆕 📊 Resultados — protegida para docentes */}
+            {/* 📊 Resultados */}
             <Route
               path="/resultados"
               element={
                 <Protected role="docente">
                   <Results />
+                </Protected>
+              }
+            />
+
+            {/* 🆕 📡 Monitoreo en Tiempo Real */}
+            <Route
+              path="/monitor"
+              element={
+                <Protected role="docente">
+                  <MonitorExam />
                 </Protected>
               }
             />
