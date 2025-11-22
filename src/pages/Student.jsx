@@ -32,7 +32,9 @@ export default function Student() {
   const intervalRef = useRef(null);
   const isExamActiveRef = useRef(false);
   const unsubscribeBlockRef = useRef(null);
-  const isCurrentlyBlockedRef = useRef(false); // 🔥 NUEVO: Referencia para bloqueo actual
+  const isCurrentlyBlockedRef = useRef(false);
+  const justBlockedRef = useRef(false); // 🔥 NUEVO: Prevenir desbloqueos inmediatos
+  const listenerInitializedRef = useRef(false); // 🔥 NUEVO: Listener ya inicializado
 
   // Cleanup al desmontar o cerrar pestaña
   useEffect(() => {
@@ -72,27 +74,49 @@ export default function Student() {
         exam.code,
         user.uid || user.email,
         (blocked, reason) => {
-          console.log("📡 Firebase cambió estado de bloqueo:", { blocked, reason });
+          // 🔥 CRÍTICO: Ignorar el primer callback si acabamos de inicializar
+          if (!listenerInitializedRef.current) {
+            listenerInitializedRef.current = true;
+            console.log("📡 Listener inicializado, ignorando primer callback");
+            
+            // Si ya estábamos bloqueados localmente, mantener ese estado
+            if (isCurrentlyBlockedRef.current) {
+              console.log("⚠️ Ya estamos bloqueados localmente, manteniendo estado");
+            }
+            return;
+          }
+
+          // 🔥 Si acabamos de bloquear (últimos 3 segundos), ignorar cambios
+          if (justBlockedRef.current) {
+            console.log("⚠️ Ignorando callback de Firebase - acabamos de bloquear");
+            return;
+          }
+
+          console.log("📡 Firebase cambió estado:", { 
+            blocked, 
+            reason, 
+            currentLocalState: isCurrentlyBlockedRef.current 
+          });
           
-          // 🔥 CRÍTICO: Solo actuar si el estado REALMENTE cambió
+          // 🔥 Solo actuar si el estado REALMENTE cambió
           if (blocked && !isCurrentlyBlockedRef.current) {
-            // Firebase dice que AHORA está bloqueado y antes NO lo estaba
-            console.log("🚫 BLOQUEANDO - Firebase confirmó");
+            // Firebase dice bloqueado y localmente NO lo estaba
+            console.log("🚫 BLOQUEANDO por orden de Firebase (profesor bloqueó manualmente)");
             isCurrentlyBlockedRef.current = true;
             setIsBlocked(true);
-            setBlockReason(reason || "Bloqueado por violación");
+            setBlockReason(reason || "Bloqueado por el profesor");
             isExamActiveRef.current = false;
             if (intervalRef.current) {
               clearInterval(intervalRef.current);
               intervalRef.current = null;
             }
           } else if (!blocked && isCurrentlyBlockedRef.current) {
-            // Firebase dice que AHORA está desbloqueado y antes SÍ lo estaba
-            console.log("✅ DESBLOQUEANDO - Profesor lo autorizó");
+            // Firebase dice desbloqueado y localmente SÍ lo estaba
+            console.log("✅ DESBLOQUEANDO - Profesor autorizó continuar");
             isCurrentlyBlockedRef.current = false;
             setIsBlocked(false);
             setBlockReason("");
-            alert("✅ Has sido desbloqueado por el profesor. Ten más cuidado.");
+            alert("✅ Has sido desbloqueado por el profesor. Puedes continuar, pero ten más cuidado.");
             
             // Reactivar pantalla completa
             if (document.documentElement.requestFullscreen) {
@@ -114,8 +138,9 @@ export default function Student() {
                 });
               }, 1000);
             }
+          } else {
+            console.log("ℹ️ Estado sin cambios, ignorando");
           }
-          // 🔥 Si ambos estados son iguales, no hacer nada (evita loops)
         }
       );
 
@@ -255,7 +280,7 @@ export default function Student() {
   const blockExamRealtime = async (reason) => {
     // 🔥 Si ya está bloqueado, no volver a bloquear
     if (isCurrentlyBlockedRef.current || fin || hasSubmittedRef.current) {
-      console.log("⚠️ Ya está bloqueado, ignorando bloqueo duplicado");
+      console.log("⚠️ Ya está bloqueado o finalizado, ignorando");
       return;
     }
     
@@ -263,6 +288,7 @@ export default function Student() {
     
     // 🔥 Marcar INMEDIATAMENTE como bloqueado
     isCurrentlyBlockedRef.current = true;
+    justBlockedRef.current = true; // 🔥 NUEVO: Bloqueo reciente
     isExamActiveRef.current = false;
     
     // 🔥 Bloquear UI INMEDIATAMENTE
@@ -276,13 +302,19 @@ export default function Student() {
       intervalRef.current = null;
     }
 
-    // 🔥 Notificar a Firebase (esto NO debe cambiar el estado local)
+    // 🔥 Notificar a Firebase
     try {
       await blockStudent(exam.code, user.uid || user.email, reason);
       console.log('✅ Bloqueo registrado en Firebase');
     } catch (error) {
       console.error('Error al registrar bloqueo en Firebase:', error);
     }
+
+    // 🔥 Después de 3 segundos, permitir que Firebase pueda actualizar el estado
+    setTimeout(() => {
+      justBlockedRef.current = false;
+      console.log("✅ Período de protección terminado");
+    }, 3000);
   };
 
   const addViolationRealtime = async (reason) => {
@@ -348,6 +380,8 @@ export default function Student() {
         setIsBlocked(false);
         isCurrentlyBlockedRef.current = false;
         hasSubmittedRef.current = false;
+        justBlockedRef.current = false; // 🔥 NUEVO
+        listenerInitializedRef.current = false; // 🔥 NUEVO
       } else {
         alert("❌ Código inválido");
       }
@@ -455,6 +489,8 @@ export default function Student() {
     hasSubmittedRef.current = false;
     isExamActiveRef.current = false;
     isCurrentlyBlockedRef.current = false;
+    justBlockedRef.current = false; // 🔥 NUEVO
+    listenerInitializedRef.current = false; // 🔥 NUEVO
     if (intervalRef.current) clearInterval(intervalRef.current);
     if (unsubscribeBlockRef.current) unsubscribeBlockRef.current();
   };
