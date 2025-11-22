@@ -16,7 +16,7 @@ try {
   console.log("📧 Project ID:", serviceAccount.project_id);
   console.log("📧 Client Email:", serviceAccount.client_email);
   
-  // Verificar que el private_key tenga el formato correcto
+
   if (!serviceAccount.private_key.includes("BEGIN PRIVATE KEY")) {
     console.error("❌ El private_key parece estar mal formateado");
     process.exit(1);
@@ -24,7 +24,7 @@ try {
   
   console.log("✅ Private key tiene formato correcto");
   
-  // Inicializar con configuración explícita
+
   if (!admin.apps.length) {
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
@@ -33,17 +33,17 @@ try {
     console.log("✅ Firebase Admin inicializado");
   }
   
-  // Probar acceso a Firestore
+
   console.log("\n🔍 Intentando acceder a Firestore...");
   const db = admin.firestore();
   
-  // Configurar timeout
+
   const timeout = setTimeout(() => {
     console.error("❌ Timeout: La operación tardó demasiado");
     process.exit(1);
   }, 10000);
   
-  // Intentar escribir un documento de prueba
+
   console.log("📝 Intentando escribir un documento de prueba...");
   const testRef = db.collection("_test").doc("connection_test");
   await testRef.set({
@@ -53,7 +53,7 @@ try {
   
   console.log("✅ Escritura exitosa!");
   
-  // Intentar leer
+
   console.log("📖 Intentando leer el documento...");
   const doc = await testRef.get();
   
@@ -64,7 +64,7 @@ try {
     console.log("⚠️ El documento no existe");
   }
   
-  // Limpiar
+
   await testRef.delete();
   console.log("🧹 Documento de prueba eliminado");
   

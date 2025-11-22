@@ -3,7 +3,7 @@ import { db } from "../database.js";
 
 const router = Router();
 
-// Obtener todos los usuarios (CON password para desarrollo)
+
 router.get("/", async (req, res) => {
   try {
     const snapshot = await db.collection("users").get();
@@ -11,7 +11,7 @@ router.get("/", async (req, res) => {
       const userData = doc.data();
       return { 
         id: doc.id, 
-        ...userData  // ⚠️ Incluye password - Solo para desarrollo
+        ...userData 
       };
     });
     res.json(data);
@@ -20,7 +20,6 @@ router.get("/", async (req, res) => {
   }
 });
 
-// Crear usuario (ya no se usa porque usamos auth/register)
 router.post("/", async (req, res) => {
   try {
     const newUser = req.body;

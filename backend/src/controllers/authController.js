@@ -1,11 +1,11 @@
 import { auth, db } from "../database.js";
 
-// 📝 Registrar nuevo usuario
+
 export const registerUser = async (req, res) => {
   try {
     const { email, password, role, name } = req.body;
 
-    // Validaciones
+
     if (!email || !password || !role) {
       return res.status(400).json({ 
         ok: false, 
@@ -20,19 +20,19 @@ export const registerUser = async (req, res) => {
       });
     }
 
-    // Crear usuario en Firebase Auth
+
     const userRecord = await auth.createUser({ 
       email, 
       password,
       displayName: name || email.split("@")[0]
     });
 
-    // Guardar datos adicionales en Firestore
+
     await db.collection("users").doc(userRecord.uid).set({
   email,
   name: name || email.split("@")[0],
   role,
-  password, // ✅ AGREGAR ESTA LÍNEA
+  password, 
   createdAt: new Date().toISOString(),
   fromGoogle: false
 });
@@ -54,7 +54,7 @@ export const registerUser = async (req, res) => {
   }
 };
 
-// 🔐 Login (verificar credenciales)
+
 export const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -66,7 +66,7 @@ export const loginUser = async (req, res) => {
       });
     }
 
-    // Buscar usuario por email en Firestore
+
     const snapshot = await db.collection("users").where("email", "==", email).get();
 
     if (snapshot.empty) {
@@ -78,10 +78,6 @@ export const loginUser = async (req, res) => {
 
     const userDoc = snapshot.docs[0];
     const userData = userDoc.data();
-
-    // Nota: En producción, NUNCA guardes passwords en Firestore
-    // Deberías usar Firebase Auth para manejar la autenticación completa
-    // Por ahora, validamos contra la colección temporal
 
     res.json({
       ok: true,

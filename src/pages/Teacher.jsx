@@ -1,90 +1,133 @@
 import { useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
-import { load, save } from "../lib/storage";
+import { 
+  apiGetExams, 
+  apiCreateExam, 
+  apiUpdateExam, 
+  apiDeleteExam 
+} from "../lib/api";
+import { getUser } from "../lib/auth";
 import { useNavigate } from "react-router-dom";
 
 export default function Teacher() {
   const navigate = useNavigate();
+  const user = getUser();
 
-  const [exams, setExams] = useState(load("exams", []));
-  const [subs, setSubs] = useState(load("submissions", []));
+  const [exams, setExams] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [active, setActive] = useState("crear");
 
   const [showRegistry, setShowRegistry] = useState(true);
   const [filter, setFilter] = useState("");
 
-  // Crear examen
+
   const [title, setTitle] = useState("");
   const [code, setCode] = useState("");
   const [dur, setDur] = useState(30);
 
-  // Preguntas
   const [questions, setQuestions] = useState([]);
   const [qtext, setQtext] = useState("");
   const [qtype, setQtype] = useState("mc");
   const [optionsRaw, setOptionsRaw] = useState("Opción A;Opción B");
   const [correctIndex, setCorrectIndex] = useState(0);
 
-  // Modal edición/ver examen
+
   const [selectedExam, setSelectedExam] = useState(null);
+  const [saving, setSaving] = useState(false);
+
 
   useEffect(() => {
-    const iv = setInterval(() => {
-      setExams(load("exams", []));
-      setSubs(load("submissions", []));
-    }, 800);
-    return () => clearInterval(iv);
+    loadExams();
   }, []);
 
-  // ➕ Agregar pregunta
+  const loadExams = async () => {
+    setLoading(true);
+    try {
+      const data = await apiGetExams();
+      setExams(data);
+    } catch (error) {
+      console.error("Error al cargar exámenes:", error);
+      alert("Error al cargar los exámenes");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+
   const addQuestion = () => {
     if (!qtext.trim()) return alert("La pregunta está vacía");
 
     let q = { id: crypto.randomUUID(), text: qtext.trim(), type: qtype };
+    
     if (qtype === "mc") {
       const opts = optionsRaw.split(";").map(o => o.trim()).filter(Boolean);
       if (opts.length < 2) return alert("Mínimo 2 opciones");
       q.options = opts;
       q.correctIndex = Number(correctIndex);
     }
+    
     setQuestions(p => [...p, q]);
     setQtext("");
     setOptionsRaw("Opción A;Opción B");
     setCorrectIndex(0);
   };
 
-  // ➕ Crear o guardar examen editado
-  const saveExam = () => {
-    if (!title.trim() || !code.trim() || questions.length === 0)
-      return alert("Completa todos los campos");
 
-    // Evitar duplicados si se crea uno nuevo
-    if (!selectedExam && exams.some(e => e.code.toUpperCase() === code.toUpperCase()))
-      return alert("El código ya está usado");
+  const saveExam = async () => {
+    if (!title.trim() || !code.trim() || questions.length === 0) {
+      return alert("Completa todos los campos y agrega al menos una pregunta");
+    }
 
-    const ex = selectedExam
-      ? { ...selectedExam, title, code, durationMinutes: Number(dur), questions }
-      : { id: crypto.randomUUID(), title, code, durationMinutes: Number(dur), questions };
+    setSaving(true);
 
-    let list = selectedExam
-      ? exams.map(e => (e.id === selectedExam.id ? ex : e))
-      : [...exams, ex];
+    try {
+      const examData = {
+        title: title.trim(),
+        code: code.trim().toUpperCase(),
+        durationMinutes: Number(dur),
+        questions,
+        teacherId: user?.uid || user?.email
+      };
 
-    save("exams", list);
-    setExams(list);
-    setTitle("");
-    setCode("");
-    setDur(30);
-    setQuestions([]);
-    setSelectedExam(null);
+      if (selectedExam) {
 
-    alert(selectedExam ? "Examen actualizado" : "Examen creado exitosamente");
+        await apiUpdateExam(selectedExam.id, examData);
+        alert("✅ Examen actualizado exitosamente");
+      } else {
+
+        await apiCreateExam(examData);
+        alert("✅ Examen creado exitosamente");
+      }
+
+
+      await loadExams();
+
+
+      resetForm();
+    } catch (error) {
+      console.error("Error al guardar examen:", error);
+      alert("❌ " + (error.response?.data?.error || "Error al guardar el examen"));
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const filtered = useMemo(
-    () => exams.filter(e => (e.code + e.title).toLowerCase().includes(filter.toLowerCase())),
-    [exams, filter]
-  );
+
+  const deleteExam = async (exam) => {
+    if (!window.confirm(`¿Eliminar el examen "${exam.title}"? Esta acción no se puede deshacer.`)) {
+      return;
+    }
+
+    try {
+      await apiDeleteExam(exam.id);
+      alert("✅ Examen eliminado");
+      await loadExams();
+    } catch (error) {
+      console.error("Error al eliminar:", error);
+      alert("❌ Error al eliminar el examen");
+    }
+  };
+
 
   const openExam = (exam) => {
     setSelectedExam(exam);
@@ -95,124 +138,276 @@ export default function Teacher() {
     setActive("crear");
   };
 
-  const deleteExam = (exam) => {
-    if (window.confirm(`¿Eliminar el examen "${exam.title}"? Esta acción no se puede deshacer.`)) {
-      const newExams = exams.filter(e => e.id !== exam.id);
-      save("exams", newExams);
-      setExams(newExams);
-    }
+
+  const resetForm = () => {
+    setTitle("");
+    setCode("");
+    setDur(30);
+    setQuestions([]);
+    setSelectedExam(null);
   };
+
+ 
+  const filtered = useMemo(
+    () => exams.filter(e => 
+      (e.code + e.title).toLowerCase().includes(filter.toLowerCase())
+    ),
+    [exams, filter]
+  );
 
   return (
     <div className="space-y-6">
 
       {/* Tabs */}
       <div className="flex gap-2">
-        <button className={`tab ${active === "crear" ? "tab-active" : ""}`} onClick={() => { setActive("crear"); setSelectedExam(null); }}>
-          Crear examen
+        <button 
+          className={`tab ${active === "crear" ? "tab-active" : ""}`} 
+          onClick={() => { 
+            setActive("crear"); 
+            resetForm();
+          }}
+        >
+          {selectedExam ? "Editar examen" : "Crear examen"}
         </button>
-        <button className={`tab ${active === "lista" ? "tab-active" : ""}`} onClick={() => setActive("lista")}>
-          Registro
+        <button 
+          className={`tab ${active === "lista" ? "tab-active" : ""}`} 
+          onClick={() => setActive("lista")}
+        >
+          Registro ({exams.length})
         </button>
-        <button className={`tab ${active === "resultados" ? "tab-active" : ""}`} onClick={() => navigate("/resultados")}>
+        <button 
+          className={`tab ${active === "resultados" ? "tab-active" : ""}`} 
+          onClick={() => navigate("/resultados")}
+        >
           Resultados
         </button>
       </div>
 
-      {/* Crear examen / Editar */}
+      {/* Crear/Editar examen */}
       {active === "crear" && (
-        <motion.section className="card p-4" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-          <h2 className="text-xl font-semibold mb-3">{selectedExam ? "Editar examen" : "Crear examen"}</h2>
-          <div className="grid md:grid-cols-3 gap-3">
-            <input className="input" placeholder="Título" value={title} onChange={e => setTitle(e.target.value)} />
-            <input className="input" placeholder="Código" value={code} onChange={e => setCode(e.target.value)} />
-            <input className="input" type="number" placeholder="Duración (min)" value={dur} onChange={e => setDur(e.target.value)} />
+        <motion.section 
+          className="card p-4" 
+          initial={{ opacity: 0, y: 20 }} 
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-xl font-semibold">
+              {selectedExam ? `Editando: ${selectedExam.title}` : "Nuevo examen"}
+            </h2>
+            {selectedExam && (
+              <button 
+                className="btn btn-outline text-sm" 
+                onClick={resetForm}
+              >
+                ❌ Cancelar edición
+              </button>
+            )}
           </div>
 
-          {/* Preguntas */}
-          <div className="mt-4">
-            <input className="input w-full" placeholder="Texto de la pregunta" value={qtext} onChange={e => setQtext(e.target.value)} />
-            <select className="input mt-2" value={qtype} onChange={e => setQtype(e.target.value)}>
+          <div className="grid md:grid-cols-3 gap-3">
+            <input 
+              className="input" 
+              placeholder="Título del examen" 
+              value={title} 
+              onChange={e => setTitle(e.target.value)} 
+            />
+            <input 
+              className="input" 
+              placeholder="Código (ej: ABC123)" 
+              value={code} 
+              onChange={e => setCode(e.target.value.toUpperCase())} 
+            />
+            <input 
+              className="input" 
+              type="number" 
+              placeholder="Duración (min)" 
+              value={dur} 
+              onChange={e => setDur(e.target.value)} 
+              min="1"
+            />
+          </div>
+
+          {/* Agregar preguntas */}
+          <div className="mt-4 p-4 border rounded-xl bg-gray-50 dark:bg-gray-800">
+            <h3 className="font-semibold mb-3">➕ Agregar pregunta</h3>
+            
+            <input 
+              className="input w-full" 
+              placeholder="Texto de la pregunta" 
+              value={qtext} 
+              onChange={e => setQtext(e.target.value)} 
+            />
+            
+            <select 
+              className="input mt-2" 
+              value={qtype} 
+              onChange={e => setQtype(e.target.value)}
+            >
               <option value="mc">Opción múltiple</option>
               <option value="open">Pregunta abierta</option>
             </select>
 
             {qtype === "mc" && (
-              <div className="mt-2 p-2 border rounded">
-                <input className="input w-full" value={optionsRaw} onChange={e => setOptionsRaw(e.target.value)} placeholder="Opciones separadas por ;" />
-                <div className="mt-1">
-                  {optionsRaw.split(";").map((o, i) => o.trim()).filter(Boolean).map((opt, i) => (
-                    <label key={i} className="flex gap-2 items-center mt-1">
-                      <input type="radio" checked={correctIndex === i} onChange={() => setCorrectIndex(i)} />
-                      {opt}
+              <div className="mt-2 p-3 border rounded bg-white dark:bg-gray-900">
+                <label className="text-sm font-medium mb-1 block">
+                  Opciones (separadas por punto y coma)
+                </label>
+                <input 
+                  className="input w-full" 
+                  value={optionsRaw} 
+                  onChange={e => setOptionsRaw(e.target.value)} 
+                  placeholder="Opción A;Opción B;Opción C" 
+                />
+                
+                <p className="text-sm mt-2 mb-1 font-medium">Respuesta correcta:</p>
+                <div className="space-y-1">
+                  {optionsRaw.split(";").map(o => o.trim()).filter(Boolean).map((opt, i) => (
+                    <label key={i} className="flex gap-2 items-center">
+                      <input 
+                        type="radio" 
+                        checked={correctIndex === i} 
+                        onChange={() => setCorrectIndex(i)} 
+                      />
+                      <span>{opt}</span>
                     </label>
                   ))}
                 </div>
               </div>
             )}
 
-            <button className="btn btn-outline mt-3" onClick={addQuestion}>Agregar pregunta</button>
-
-            {/* Lista de preguntas */}
-            <div className="mt-4 space-y-2">
-              {questions.map(q => (
-                <motion.div key={q.id} className="p-2 border rounded bg-gray-100 flex justify-between items-start">
-                  <div>
-                    <p className="font-medium">{q.text}</p>
-                    {q.type === "mc" && (
-                      <ul className="text-sm mt-1">
-                        {q.options.map((o, i) => (
-                          <li key={i} className={i === q.correctIndex ? "text-blue-600 font-bold" : ""}>{i + 1}. {o}</li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                  <button className="text-red-500 text-sm" onClick={() => setQuestions(prev => prev.filter(p => p.id !== q.id))}>Eliminar</button>
-                </motion.div>
-              ))}
-            </div>
-
-            <button className="btn btn-primary mt-4" onClick={saveExam}>{selectedExam ? "Guardar cambios" : "Crear examen"}</button>
+            <button 
+              className="btn btn-outline mt-3" 
+              onClick={addQuestion}
+            >
+              ➕ Agregar pregunta
+            </button>
           </div>
+
+          {/* Lista de preguntas agregadas */}
+          {questions.length > 0 && (
+            <div className="mt-4">
+              <h3 className="font-semibold mb-2">📝 Preguntas ({questions.length})</h3>
+              <div className="space-y-2">
+                {questions.map((q, idx) => (
+                  <motion.div 
+                    key={q.id} 
+                    className="p-3 border rounded-lg bg-blue-50 dark:bg-gray-800 flex justify-between items-start"
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                  >
+                    <div className="flex-1">
+                      <p className="font-medium">
+                        {idx + 1}. {q.text}
+                      </p>
+                      {q.type === "mc" && (
+                        <ul className="text-sm mt-1 ml-4 space-y-0.5">
+                          {q.options.map((o, i) => (
+                            <li 
+                              key={i} 
+                              className={i === q.correctIndex ? "text-green-600 font-bold" : ""}
+                            >
+                              {i === q.correctIndex && "✅ "}{o}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {q.type === "open" && (
+                        <p className="text-sm text-gray-500 mt-1">Pregunta abierta</p>
+                      )}
+                    </div>
+                    <button 
+                      className="text-red-500 text-sm font-medium hover:text-red-700" 
+                      onClick={() => setQuestions(prev => prev.filter(p => p.id !== q.id))}
+                    >
+                      🗑️
+                    </button>
+                  </motion.div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <button 
+            className="btn btn-primary mt-4 w-full disabled:opacity-50" 
+            onClick={saveExam}
+            disabled={saving || questions.length === 0}
+          >
+            {saving ? "Guardando..." : (selectedExam ? "💾 Guardar cambios" : "✅ Crear examen")}
+          </button>
         </motion.section>
       )}
 
-      {/* Registro */}
+      {/* Registro de exámenes */}
       {active === "lista" && (
-        <motion.section className="card p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+        <motion.section 
+          className="card p-4" 
+          initial={{ opacity: 0 }} 
+          animate={{ opacity: 1 }}
+        >
           <div className="flex justify-between mb-3">
             <h2 className="text-xl font-semibold">Registro de exámenes</h2>
             <div className="flex gap-2">
-              <input className="input" placeholder="Buscar..." value={filter} onChange={e => setFilter(e.target.value)} />
-              <button className="btn btn-outline" onClick={() => setShowRegistry(s => !s)}>{showRegistry ? "Ocultar" : "Mostrar"}</button>
+              <input 
+                className="input" 
+                placeholder="Buscar..." 
+                value={filter} 
+                onChange={e => setFilter(e.target.value)} 
+              />
+              <button 
+                className="btn btn-outline" 
+                onClick={() => setShowRegistry(s => !s)}
+              >
+                {showRegistry ? "Ocultar" : "Mostrar"}
+              </button>
             </div>
           </div>
 
-          {showRegistry && (
+          {loading ? (
+            <div className="text-center py-10 text-gray-500">
+              Cargando exámenes...
+            </div>
+          ) : showRegistry ? (
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm">
-                <thead className="bg-blue-200">
+                <thead className="bg-blue-600 text-white">
                   <tr>
-                    <th className="p-2 text-left">Código</th>
-                    <th className="p-2 text-left">Título</th>
-                    <th className="p-2 text-left">Duración</th>
-                    <th className="p-2 text-left">Preguntas</th>
-                    <th className="p-2 text-left">Acciones</th>
+                    <th className="p-3 text-left">Código</th>
+                    <th className="p-3 text-left">Título</th>
+                    <th className="p-3 text-left">Duración</th>
+                    <th className="p-3 text-left">Preguntas</th>
+                    <th className="p-3 text-left">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.length === 0 ? (
-                    <tr><td colSpan={5} className="text-center py-3">No hay exámenes registrados</td></tr>
+                    <tr>
+                      <td colSpan={5} className="text-center py-6 text-gray-500">
+                        {filter ? "No se encontraron exámenes" : "No hay exámenes registrados"}
+                      </td>
+                    </tr>
                   ) : (
                     filtered.map(e => (
-                      <tr key={e.id} className="border-b hover:bg-blue-50 transition">
-                        <td className="p-2">{e.code}</td>
-                        <td className="p-2">{e.title}</td>
-                        <td className="p-2">{e.durationMinutes} min</td>
-                        <td className="p-2">{e.questions.length}</td>
-                        <td className="p-2 flex gap-2">
-                          <button className="btn btn-sm btn-outline" onClick={() => openExam(e)}>Ver / Editar</button>
-                          <button className="btn btn-sm btn-red" onClick={() => deleteExam(e)}>Eliminar</button>
+                      <tr 
+                        key={e.id} 
+                        className="border-b hover:bg-blue-50 dark:hover:bg-gray-800 transition"
+                      >
+                        <td className="p-3 font-mono font-bold text-blue-600">{e.code}</td>
+                        <td className="p-3">{e.title}</td>
+                        <td className="p-3">{e.durationMinutes} min</td>
+                        <td className="p-3">{e.questions?.length || 0}</td>
+                        <td className="p-3 flex gap-2">
+                          <button 
+                            className="btn btn-outline text-xs" 
+                            onClick={() => openExam(e)}
+                          >
+                            ✏️ Editar
+                          </button>
+                          <button 
+                            className="btn bg-red-500 text-white hover:bg-red-600 text-xs" 
+                            onClick={() => deleteExam(e)}
+                          >
+                            🗑️
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -220,7 +415,7 @@ export default function Teacher() {
                 </tbody>
               </table>
             </div>
-          )}
+          ) : null}
         </motion.section>
       )}
     </div>

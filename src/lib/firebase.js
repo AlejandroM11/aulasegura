@@ -1,4 +1,4 @@
-// src/lib/firebase.js
+
 import { initializeApp } from "firebase/app";
 import {
   getAuth,
@@ -20,10 +20,7 @@ const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const provider = new GoogleAuthProvider();
 
-/**
- * Inicia sesión con Google y asocia el rol seleccionado (docente/estudiante).
- * Si el usuario ya existe, lo autentica; si no, lo registra.
- */
+
 export async function loginWithGoogle(role) {
   try {
     const result = await signInWithPopup(auth, provider);
@@ -33,17 +30,17 @@ export async function loginWithGoogle(role) {
     let existing = list.find((u) => u.email === user.email);
 
     if (existing) {
-      // ⚠️ Si ya existe con otro rol, mostrar advertencia
+
       if (existing.role !== role) {
         alert(`Esta cuenta ya está registrada como ${existing.role}.`);
         return null;
       }
 
-      // ✅ Si coincide el rol, iniciar sesión normalmente
+
       setUser(existing);
       return existing;
     } else {
-      // 🆕 Nuevo registro
+
       const newUser = {
         email: user.email,
         name: user.displayName,

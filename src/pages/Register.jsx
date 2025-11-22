@@ -2,9 +2,7 @@ import { useState } from "react";
 import { setUser } from "../lib/auth";
 import { useNavigate, Link } from "react-router-dom";
 import { loginWithGoogle } from "../lib/firebase";
-import axios from "axios";
-
-const API_URL = "http://localhost:3000/api";
+import { apiRegister } from "../lib/api"; // 🔵 Usa la nueva función
 
 export default function Register() {
   const [email, setEmail] = useState("");
@@ -19,29 +17,28 @@ export default function Register() {
     setLoading(true);
 
     try {
-      // 🔵 Registrar usuario en el backend
-      const response = await axios.post(`${API_URL}/auth/register`, {
+      // 🔵 Usar apiRegister en lugar de axios directo
+      const response = await apiRegister({
         email,
         password: pw,
         name,
         role
       });
 
-      if (response.data.ok) {
+      if (response.ok) {
         const newUser = {
-          uid: response.data.uid,
-          email: response.data.email,
-          name: response.data.name,
-          role: response.data.role,
+          uid: response.uid,
+          email: response.email,
+          name: response.name,
+          role: response.role,
           fromGoogle: false
         };
 
-        // Guardar en localStorage y redirigir
         setUser(newUser);
         alert("✅ Cuenta creada exitosamente");
         nav(role === "docente" ? "/docente" : "/estudiante");
       } else {
-        alert("❌ " + response.data.error);
+        alert("❌ " + response.error);
       }
     } catch (err) {
       console.error("Error al registrar:", err);
