@@ -1,6 +1,13 @@
 {
   "rewrites": [
-    { "source": "/(.*)", "destination": "/" }
+    { 
+      "source": "/api/evaluaciones/code/:code", 
+      "destination": "/api/evaluaciones/code/[code]" 
+    },
+    { 
+      "source": "/(.*)", 
+      "destination": "/" 
+    }
   ],
   "headers": [
     {
