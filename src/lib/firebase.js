@@ -4,7 +4,7 @@ import {
   GoogleAuthProvider,
   signInWithPopup,
 } from "firebase/auth";
-import { getDatabase, ref, set, onValue, push, remove, update } from "firebase/database";
+import { getDatabase, ref, set, onValue, push, remove, update, get } from "firebase/database"; // 🔥 Agregado 'get'
 import { setUser } from "./auth";
 
 const firebaseConfig = {
@@ -14,13 +14,13 @@ const firebaseConfig = {
   storageBucket: "aulasegura-d535e.firebasestorage.app",
   messagingSenderId: "918650073829",
   appId: "1:918650073829:web:8884dd5e11c571c60a9a0c",
-  databaseURL: "https://aulasegura-d535e-default-rtdb.firebaseio.com" // 🆕 URL de Realtime Database
+  databaseURL: "https://aulasegura-d535e-default-rtdb.firebaseio.com"
 };
 
 const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);
 export const provider = new GoogleAuthProvider();
-export const database = getDatabase(app); // 🆕 Realtime Database
+export const database = getDatabase(app);
 
 // ==================== FUNCIONES DE REALTIME DATABASE ====================
 
@@ -130,7 +130,7 @@ export function listenToMessages(examCode, callback) {
   });
 }
 
-// 👀 Escuchar estado de bloqueo (para el estudiante)
+// 👀 Escuchar estado de bloqueo (para el estudiante) - DEPRECADO, usar checkBlockStatus
 export function listenToBlockStatus(examCode, studentUid, callback) {
   const studentRef = ref(database, `active_exams/${examCode}/students/${studentUid}`);
   return onValue(studentRef, (snapshot) => {
@@ -139,6 +139,27 @@ export function listenToBlockStatus(examCode, studentUid, callback) {
       callback(data.isBlocked, data.blockReason);
     }
   });
+}
+
+// 🔥 NUEVA FUNCIÓN: Leer estado de bloqueo UNA SOLA VEZ (polling manual)
+export async function checkBlockStatus(examCode, studentUid) {
+  try {
+    const studentRef = ref(database, `active_exams/${examCode}/students/${studentUid}`);
+    const snapshot = await get(studentRef);
+    
+    if (snapshot.exists()) {
+      const data = snapshot.val();
+      return {
+        isBlocked: data.isBlocked || false,
+        blockReason: data.blockReason || null
+      };
+    }
+    
+    return { isBlocked: false, blockReason: null };
+  } catch (error) {
+    console.error('Error al verificar estado de bloqueo:', error);
+    return { isBlocked: false, blockReason: null };
+  }
 }
 
 // ==================== LOGIN CON GOOGLE ====================

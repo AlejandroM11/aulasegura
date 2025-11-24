@@ -11,6 +11,19 @@ import {
   sendMessageToTeacher
 } from "../lib/firebase";
 
+// Helper guard to avoid rendering objects directly in JSX (causa de error React #130)
+const renderText = (v) => {
+  if (v === null || v === undefined) return "";
+  if (typeof v === "object") {
+    try {
+      return JSON.stringify(v);
+    } catch (e) {
+      return String(v);
+    }
+  }
+  return v;
+};
+
 export default function Student() {
   const [code, setCode] = useState("");
   const [exam, setExam] = useState(null);
@@ -26,16 +39,15 @@ export default function Student() {
   const [blockMessage, setBlockMessage] = useState("");
   const [violations, setViolations] = useState([]);
   const [showMessageModal, setShowMessageModal] = useState(false);
-  
-  const user = getUser();
+
+  const user = getUser() || {};
   const hasSubmittedRef = useRef(false);
   const intervalRef = useRef(null);
   const isExamActiveRef = useRef(false);
   const unsubscribeBlockRef = useRef(null);
   const isCurrentlyBlockedRef = useRef(false);
-  const justBlockedRef = useRef(false);
-  const listenerInitializedRef = useRef(false);
-  const blockTimestampRef = useRef(0); // 🔥 NUEVO: Timestamp del bloqueo
+  const justBlockedRef = useRef(false); // 🔥 NUEVO: Prevenir desbloqueos inmediatos
+  const listenerInitializedRef = useRef(false); // 🔥 NUEVO: Listener ya inicializado
 
   // Cleanup al desmontar o cerrar pestaña
   useEffect(() => {
@@ -49,7 +61,7 @@ export default function Student() {
 
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
-      
+
       if (exam && user && !fin) {
         removeActiveStudent(exam.code, user.uid || user.email)
           .then(() => console.log('✅ Cleanup: Estudiante removido'))
@@ -62,12 +74,12 @@ export default function Student() {
   useEffect(() => {
     if (exam && user && !fin && !showReview) {
       console.log("🔥 Registrando estudiante activo:", user.email);
-      
+
       registerActiveStudent(exam.code, {
         uid: user.uid || user.email,
         email: user.email,
         name: user.name,
-        timeLeft: exam.durationMinutes * 60
+        timeLeft: (exam.durationMinutes || 0) * 60
       }).catch(console.error);
 
       // 🔥 Escuchar cambios de bloqueo desde Firebase
@@ -79,7 +91,7 @@ export default function Student() {
           if (!listenerInitializedRef.current) {
             listenerInitializedRef.current = true;
             console.log("📡 Listener inicializado, ignorando primer callback");
-            
+
             // Si ya estábamos bloqueados localmente, mantener ese estado
             if (isCurrentlyBlockedRef.current) {
               console.log("⚠️ Ya estamos bloqueados localmente, manteniendo estado");
@@ -87,25 +99,25 @@ export default function Student() {
             return;
           }
 
-          // 🔥 Si acabamos de bloquear (últimos 2 segundos), ignorar cambios
+          // 🔥 Si acabamos de bloquear (últimos 3 segundos), ignorar cambios
           if (justBlockedRef.current) {
             console.log("⚠️ Ignorando callback de Firebase - acabamos de bloquear");
             return;
           }
 
-          console.log("📡 Firebase cambió estado:", { 
-            blocked, 
-            reason, 
-            currentLocalState: isCurrentlyBlockedRef.current 
+          console.log("📡 Firebase cambió estado:", {
+            blocked,
+            reason,
+            currentLocalState: isCurrentlyBlockedRef.current
           });
-          
+
           // 🔥 Solo actuar si el estado REALMENTE cambió
           if (blocked && !isCurrentlyBlockedRef.current) {
             // Firebase dice bloqueado y localmente NO lo estaba
             console.log("🚫 BLOQUEANDO por orden de Firebase (profesor bloqueó manualmente)");
             isCurrentlyBlockedRef.current = true;
             setIsBlocked(true);
-            setBlockReason(reason || "Bloqueado por el profesor");
+            setBlockReason(renderText(reason || "Bloqueado por el profesor"));
             isExamActiveRef.current = false;
             if (intervalRef.current) {
               clearInterval(intervalRef.current);
@@ -117,15 +129,17 @@ export default function Student() {
             isCurrentlyBlockedRef.current = false;
             setIsBlocked(false);
             setBlockReason("");
-            alert("✅ Has sido desbloqueado por el profesor. Puedes continuar, pero ten más cuidado.");
-            
+            try {
+              alert("✅ Has sido desbloqueado por el profesor. Puedes continuar, pero ten más cuidado.");
+            } catch(e) { /* silent */ }
+
             // Reactivar pantalla completa
             if (document.documentElement.requestFullscreen) {
               document.documentElement.requestFullscreen().catch(() => {});
             }
-            
+
             isExamActiveRef.current = true;
-            
+
             // Reiniciar el timer
             if (!intervalRef.current && t > 0) {
               intervalRef.current = setInterval(() => {
@@ -149,14 +163,14 @@ export default function Student() {
 
       // Actualizar estado cada 5 segundos
       const statusInterval = setInterval(() => {
-        const answeredCount = Object.keys(ans).filter(
+        const answeredCount = Object.keys(ans || {}).filter(
           k => ans[k] !== undefined && ans[k] !== ""
         ).length;
 
         updateStudentStatus(exam.code, user.uid || user.email, {
           timeLeft: t,
           answeredCount,
-          violations: violations.length,
+          violations: (violations || []).length,
           lastActivity: Date.now()
         }).catch(console.error);
       }, 5000);
@@ -164,11 +178,13 @@ export default function Student() {
       return () => {
         clearInterval(statusInterval);
         if (unsubscribeBlockRef.current) {
-          unsubscribeBlockRef.current();
+          try { unsubscribeBlockRef.current(); } catch(e) {}
         }
       };
     }
-  }, [exam, user, fin, showReview, ans, t, violations]);
+  // Intentamos mantener deps estables - ans, t y violations pueden cambiar frecuentemente
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [exam, user, fin, showReview]);
 
   // Sistema antifraude
   useEffect(() => {
@@ -279,25 +295,24 @@ export default function Student() {
   }, [exam, fin, showReview, isBlocked]);
 
   const blockExamRealtime = async (reason) => {
+    // 🔥 Si ya está bloqueado, no volver a bloquear
     if (isCurrentlyBlockedRef.current || fin || hasSubmittedRef.current) {
       console.log("⚠️ Ya está bloqueado o finalizado, ignorando");
       return;
     }
-    
+
     console.warn('🚫 BLOQUEANDO EXAMEN:', reason);
-    
-    // 🔥 Guardar timestamp del bloqueo
-    blockTimestampRef.current = Date.now();
-    
-    // 🔥 Marcar como bloqueado INMEDIATAMENTE
+
+    // 🔥 Marcar INMEDIATAMENTE como bloqueado
     isCurrentlyBlockedRef.current = true;
+    justBlockedRef.current = true; // 🔥 NUEVO: Bloqueo reciente
     isExamActiveRef.current = false;
-    
-    // 🔥 Bloquear UI
+
+    // 🔥 Bloquear UI INMEDIATAMENTE
     setIsBlocked(true);
-    setBlockReason(reason);
+    setBlockReason(renderText(reason));
     addViolationRealtime(reason);
-    
+
     // Detener timer
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
@@ -308,18 +323,23 @@ export default function Student() {
     try {
       await blockStudent(exam.code, user.uid || user.email, reason);
       console.log('✅ Bloqueo registrado en Firebase');
-      console.log(`⏰ Protección de 10 minutos activada hasta: ${new Date(Date.now() + 600000).toLocaleTimeString()}`);
     } catch (error) {
-      console.error('❌ Error al registrar bloqueo:', error);
+      console.error('Error al registrar bloqueo en Firebase:', error);
     }
+
+    // 🔥 Después de 3 segundos, permitir que Firebase pueda actualizar el estado
+    setTimeout(() => {
+      justBlockedRef.current = false;
+      console.log("✅ Período de protección terminado");
+    }, 3000);
   };
 
   const addViolationRealtime = async (reason) => {
-    const newViolations = [...violations, {
+    const newViolations = [...(violations || []), {
       reason,
       timestamp: new Date().toISOString()
     }];
-    
+
     setViolations(newViolations);
 
     try {
@@ -335,7 +355,7 @@ export default function Student() {
   // Timer del examen
   useEffect(() => {
     if (exam && !fin && !isBlocked && !showReview) {
-      setT(exam.durationMinutes * 60);
+      setT((exam.durationMinutes || 0) * 60);
 
       if (document.documentElement.requestFullscreen) {
         document.documentElement.requestFullscreen().catch(err => {
@@ -354,7 +374,7 @@ export default function Student() {
         });
       }, 1000);
     }
-    
+
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
@@ -369,7 +389,7 @@ export default function Student() {
     setLoading(true);
     try {
       const response = await apiGetExamByCode(code.trim().toUpperCase());
-      
+
       if (response.ok && response.exam) {
         setExam(response.exam);
         setAns({});
@@ -377,9 +397,8 @@ export default function Student() {
         setIsBlocked(false);
         isCurrentlyBlockedRef.current = false;
         hasSubmittedRef.current = false;
-        justBlockedRef.current = false;
-        listenerInitializedRef.current = false;
-        blockTimestampRef.current = 0; // 🔥 NUEVO
+        justBlockedRef.current = false; // 🔥 NUEVO
+        listenerInitializedRef.current = false; // 🔥 NUEVO
       } else {
         alert("❌ Código inválido");
       }
@@ -401,7 +420,7 @@ export default function Student() {
   const closeReview = () => {
     setShowReview(false);
     isExamActiveRef.current = true;
-    
+
     if (exam && !fin && !isBlocked) {
       if (document.documentElement.requestFullscreen) {
         document.documentElement.requestFullscreen().catch(() => {});
@@ -452,7 +471,7 @@ export default function Student() {
       await apiCreateSubmission(submission);
       setFin(true);
       setShowSuccess(true);
-      
+
       if (document.fullscreenElement) {
         document.exitFullscreen().catch(() => {});
       }
@@ -473,7 +492,7 @@ export default function Student() {
         .then(() => console.log('✅ Estudiante removido al resetear'))
         .catch(err => console.error('Error al remover:', err));
     }
-    
+
     setExam(null);
     setAns({});
     setT(0);
@@ -487,9 +506,8 @@ export default function Student() {
     hasSubmittedRef.current = false;
     isExamActiveRef.current = false;
     isCurrentlyBlockedRef.current = false;
-    justBlockedRef.current = false;
-    listenerInitializedRef.current = false;
-    blockTimestampRef.current = 0; // 🔥 NUEVO
+    justBlockedRef.current = false; // 🔥 NUEVO
+    listenerInitializedRef.current = false; // 🔥 NUEVO
     if (intervalRef.current) clearInterval(intervalRef.current);
     if (unsubscribeBlockRef.current) unsubscribeBlockRef.current();
   };
@@ -555,11 +573,11 @@ export default function Student() {
   // PANTALLA: BLOQUEADO
   if (isBlocked) {
     return (
-      <motion.div 
-        initial={{ opacity: 0 }} 
+      <motion.div
+        initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         className="fixed inset-0 z-[9999] flex items-center justify-center"
-        style={{ 
+        style={{
           background: 'linear-gradient(135deg, #dc2626 0%, #991b1b 100%)',
           isolation: 'isolate'
         }}
@@ -571,30 +589,30 @@ export default function Student() {
             transition={{ type: "spring", stiffness: 200 }}
             className="text-center text-white"
           >
-            <motion.div 
+            <motion.div
               className="text-9xl mb-6"
               animate={{ rotate: [0, -10, 10, -10, 0] }}
               transition={{ repeat: Infinity, duration: 2 }}
             >
               🚫
             </motion.div>
-            
+
             <h1 className="text-5xl font-black mb-4 drop-shadow-lg">
               EXAMEN BLOQUEADO
             </h1>
-            
+
             <div className="bg-white/20 backdrop-blur-xl p-6 rounded-2xl mb-6 border-4 border-white/30">
               <p className="text-2xl font-bold mb-3">Razón del bloqueo:</p>
-              <p className="text-xl">{blockReason}</p>
+              <p className="text-xl">{renderText(blockReason)}</p>
             </div>
 
-            {violations.length > 0 && (
+            {(violations || []).length > 0 && (
               <div className="bg-white/10 backdrop-blur-xl p-5 rounded-2xl mb-6 text-left max-w-md mx-auto">
-                <p className="font-bold mb-3 text-lg">📋 Historial de violaciones ({violations.length}):</p>
+                <p className="font-bold mb-3 text-lg">📋 Historial de violaciones ({(violations || []).length}):</p>
                 <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {violations.map((v, idx) => (
+                  {(violations || []).map((v, idx) => (
                     <div key={idx} className="text-sm bg-white/10 p-3 rounded-lg">
-                      <span className="font-bold">{idx + 1}.</span> {v.reason}
+                      <span className="font-bold">{idx + 1}.</span> {renderText(v.reason)}
                     </div>
                   ))}
                 </div>
@@ -643,7 +661,7 @@ export default function Student() {
                 <h3 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">
                   Enviar mensaje al profesor
                 </h3>
-                
+
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
                   Explica tu situación. El profesor recibirá tu mensaje en tiempo real.
                 </p>
@@ -704,21 +722,21 @@ export default function Student() {
           </div>
 
           <div className="space-y-4">
-            {exam.questions.map((q, idx) => {
+            {(Array.isArray(exam.questions) ? exam.questions : []).map((q, idx) => {
               const answer = ans[q.id];
               const isAnswered = answer !== undefined && answer !== "";
 
               return (
-                <div key={q.id} className={`p-4 rounded-xl border-2 ${isAnswered ? "bg-green-50 border-green-300" : "bg-red-50 border-red-300"}`}>
-                  <p className="font-semibold mb-2">{idx + 1}. {q.text}</p>
+                <div key={q.id || idx} className={`p-4 rounded-xl border-2 ${isAnswered ? "bg-green-50 border-green-300" : "bg-red-50 border-red-300"}`}>
+                  <p className="font-semibold mb-2">{idx + 1}. {renderText(q.text)}</p>
                   {q.type === "mc" && (
                     <p className="text-sm ml-4">
-                      {isAnswered ? `✅ ${q.options[answer]}` : "❌ Sin responder"}
+                      {isAnswered ? `✅ ${renderText(q.options?.[answer])}` : "❌ Sin responder"}
                     </p>
                   )}
                   {q.type === "open" && (
                     <p className="text-sm ml-4">
-                      {isAnswered ? answer : "❌ Sin responder"}
+                      {isAnswered ? renderText(answer) : "❌ Sin responder"}
                     </p>
                   )}
                 </div>
@@ -738,40 +756,40 @@ export default function Student() {
   }
 
   // PANTALLA: EXAMEN
-  const answered = Object.keys(ans).filter(k => ans[k] !== undefined && ans[k] !== "").length;
-  const total = exam.questions.length;
+  const answered = Object.keys(ans || {}).filter(k => ans[k] !== undefined && ans[k] !== "").length;
+  const total = Array.isArray(exam.questions) ? exam.questions.length : 0;
 
   return (
     <div className="max-w-4xl mx-auto">
       <div className="bg-gradient-to-r from-blue-600 to-blue-700 text-white p-6 rounded-2xl shadow-xl mb-6 sticky top-0 z-10">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h1 className="text-2xl font-bold">{exam.title}</h1>
-            <p className="text-sm opacity-90">Código: {exam.code}</p>
+            <h1 className="text-2xl font-bold">{renderText(exam.title)}</h1>
+            <p className="text-sm opacity-90">Código: {renderText(exam.code)}</p>
           </div>
           <div className="text-right">
             <div className="text-4xl font-bold">{fmt(t)}</div>
             <p className="text-xs opacity-80">Restante</p>
           </div>
         </div>
-        
+
         <div className="bg-white/20 rounded-full h-3 overflow-hidden">
-          <div className="bg-white h-full transition-all" style={{ width: `${(answered / total) * 100}%` }} />
+          <div className="bg-white h-full transition-all" style={{ width: `${total === 0 ? 0 : (answered / total) * 100}%` }} />
         </div>
         <p className="text-xs mt-2 text-center">{answered} de {total} respondidas</p>
       </div>
 
       <div className="space-y-6">
-        {exam.questions.map((q, idx) => (
-          <motion.div key={q.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.05 }} className="card">
-            <p className="font-bold text-lg mb-4">{idx + 1}. {q.text}</p>
+        {(Array.isArray(exam.questions) ? exam.questions : []).map((q, idx) => (
+          <motion.div key={q.id || idx} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.05 }} className="card">
+            <p className="font-bold text-lg mb-4">{idx + 1}. {renderText(q.text)}</p>
 
             {q.type === "mc" && q.options && (
               <div className="space-y-2">
                 {q.options.map((opt, i) => (
                   <label key={i} className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition ${ans[q.id] === i ? "bg-blue-100 border-blue-500" : "border-gray-200 hover:border-blue-300"}`}>
                     <input type="radio" name={`q-${q.id}`} checked={ans[q.id] === i} onChange={() => ch(q.id, i)} className="w-5 h-5" />
-                    <span>{opt}</span>
+                    <span>{renderText(opt)}</span>
                   </label>
                 ))}
               </div>
