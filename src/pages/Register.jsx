@@ -2,7 +2,8 @@ import { useState } from "react";
 import { setUser } from "../lib/auth";
 import { useNavigate, Link } from "react-router-dom";
 import { loginWithGoogle } from "../lib/firebase";
-import { apiRegister } from "../lib/api"; // 🔵 Usa la nueva función
+import { apiRegister } from "../lib/api";
+import { isValidEmailDomain, getEmailValidationError } from "../lib/emailValidator";
 
 export default function Register() {
   const [email, setEmail] = useState("");
@@ -14,10 +15,16 @@ export default function Register() {
 
   const submit = async (e) => {
     e.preventDefault();
+    
+    // ✅ VALIDAR DOMINIO DEL EMAIL
+    if (!isValidEmailDomain(email)) {
+      alert(getEmailValidationError(email));
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // 🔵 Usar apiRegister en lugar de axios directo
       const response = await apiRegister({
         email,
         password: pw,
@@ -97,6 +104,9 @@ export default function Register() {
             onChange={(e) => setEmail(e.target.value)}
             required
           />
+          <p className="text-xs text-gray-500 mt-1">
+            Solo correos de Gmail, Hotmail, Outlook, Yahoo, iCloud o institucionales (.edu)
+          </p>
         </div>
 
         <div>

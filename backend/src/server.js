@@ -7,16 +7,29 @@ import evaluacionesRoutes from "./routes/evaluaciones.js";
 import notasRoutes from "./routes/notas.js";
 
 const app = express();
-const PORT = 3000; // 🔵 Cambiado a 3000 para coincidir con api.js
+const PORT = 3000;
 
 app.use(cors());
-app.use(express.json());
+
+// ✅ Configurar express para UTF-8
+app.use(express.json({ charset: 'utf-8' }));
+app.use(express.urlencoded({ extended: true, charset: 'utf-8' }));
+
+// ✅ Middleware global para UTF-8
+app.use((req, res, next) => {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  next();
+});
 
 // Ruta de prueba
 app.get("/test", async (req, res) => {
   try {
     const snap = await db.collection("exams").get();
-    res.json({ ok: true, count: snap.size, message: "Backend funcionando correctamente" });
+    res.json({ 
+      ok: true, 
+      count: snap.size, 
+      message: "Backend funcionando correctamente con UTF-8 ✅" 
+    });
   } catch (e) {
     res.json({ ok: false, error: e.message });
   }
@@ -31,4 +44,5 @@ app.use("/api/notas", notasRoutes);
 app.listen(PORT, () => {
   console.log(`🚀 Backend corriendo en http://localhost:${PORT}`);
   console.log(`📡 Prueba con: http://localhost:${PORT}/test`);
+  console.log(`✅ UTF-8 habilitado en todas las rutas`);
 });

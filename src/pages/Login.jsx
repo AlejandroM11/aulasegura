@@ -15,14 +15,10 @@ export default function Login() {
     setLoading(true);
 
     try {
-      // 🔵 Usar el endpoint de login correcto
       const response = await apiLogin({ email, password: pw });
 
       if (response.ok && response.user) {
-        // Guardar usuario en localStorage
         setUser(response.user);
-        
-        // Redirigir según el rol
         nav(response.user.role === "docente" ? "/docente" : "/estudiante");
       } else {
         alert("❌ " + (response.error || "Error al iniciar sesión"));
@@ -99,6 +95,26 @@ export default function Login() {
           {loading ? "Entrando..." : "Entrar"}
         </button>
       </form>
+
+      {/* 🎯 NUEVO: Botón de acceso como invitado */}
+      <div className="mt-6">
+        <div className="relative">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-gray-300"></div>
+          </div>
+          <div className="relative flex justify-center text-sm">
+            <span className="px-2 bg-white dark:bg-gray-800 text-gray-500">O</span>
+          </div>
+        </div>
+
+        <button
+          onClick={() => nav("/invitado")}
+          className="mt-4 w-full px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl font-semibold hover:from-purple-700 hover:to-blue-700 transition shadow-lg flex items-center justify-center gap-2"
+        >
+          <span className="text-xl">🎯</span>
+          Entrar como invitado (sin cuenta)
+        </button>
+      </div>
 
       <div className="mt-6 text-center">
         <p className="mb-2">O entra con:</p>

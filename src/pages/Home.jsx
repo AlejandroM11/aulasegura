@@ -17,13 +17,24 @@ export default function Home() {
             y herramientas para docentes y estudiantes.
           </p>
 
-          <div className="mt-8 flex gap-4">
-            <Link to="/login" className="btn btn-primary text-lg px-6 py-3">
-              Ingresar
+          {/* 🎯 NUEVO: Acceso rápido destacado */}
+          <div className="mt-8 space-y-3">
+            <Link 
+              to="/invitado" 
+              className="block w-full md:w-auto text-center px-8 py-4 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-xl font-bold text-lg hover:from-purple-700 hover:to-blue-700 transition shadow-xl transform hover:scale-105"
+            >
+              <span className="text-2xl mr-2">🎯</span>
+              Acceso Rápido (sin cuenta)
             </Link>
-            <Link to="/register" className="btn btn-outline text-lg px-6 py-3">
-              Crear cuenta
-            </Link>
+            
+            <div className="flex gap-3">
+              <Link to="/login" className="btn btn-outline text-lg px-6 py-3 flex-1 text-center">
+                Ingresar
+              </Link>
+              <Link to="/register" className="btn btn-outline text-lg px-6 py-3 flex-1 text-center">
+                Crear cuenta
+              </Link>
+            </div>
           </div>
         </div>
 

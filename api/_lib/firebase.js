@@ -31,8 +31,13 @@ if (!admin.apps.length) {
 db = admin.firestore();
 auth = admin.auth();
 
-// Helper para CORS
+// ✅ Configurar Firestore para UTF-8
+const settings = { ignoreUndefinedProperties: true };
+db.settings(settings);
+
+// Helper para CORS con UTF-8
 export function setCorsHeaders(res) {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');

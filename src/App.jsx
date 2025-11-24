@@ -7,7 +7,8 @@ import Register from "./pages/Register";
 import Student from "./pages/Student";
 import Teacher from "./pages/Teacher";
 import Results from "./pages/Results";
-import MonitorExam from "./pages/MonitorExam"; // 🆕 NUEVO
+import MonitorExam from "./pages/MonitorExam";
+import GuestAccess from "./pages/GuestAccess";
 import Home from "./pages/Home";
 import { getUser, logout } from "./lib/auth";
 import { ThemeProvider } from "./lib/theme";
@@ -61,6 +62,12 @@ export default function App() {
               element={user ? autoRedirect : <Register />}
             />
 
+            {/* 🎯 Acceso como invitado */}
+            <Route
+              path="/invitado"
+              element={user ? autoRedirect : <GuestAccess />}
+            />
+
             {/* 🎓 Estudiante */}
             <Route
               path="/estudiante"
@@ -91,7 +98,7 @@ export default function App() {
               }
             />
 
-            {/* 🆕 📡 Monitoreo en Tiempo Real */}
+            {/* 📡 Monitoreo en Tiempo Real */}
             <Route
               path="/monitor"
               element={
