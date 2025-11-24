@@ -33,8 +33,9 @@ export default function Student() {
   const isExamActiveRef = useRef(false);
   const unsubscribeBlockRef = useRef(null);
   const isCurrentlyBlockedRef = useRef(false);
-  const justBlockedRef = useRef(false); // 🔥 NUEVO: Prevenir desbloqueos inmediatos
-  const listenerInitializedRef = useRef(false); // 🔥 NUEVO: Listener ya inicializado
+  const justBlockedRef = useRef(false);
+  const listenerInitializedRef = useRef(false);
+  const blockTimestampRef = useRef(0); // 🔥 NUEVO: Timestamp del bloqueo
 
   // Cleanup al desmontar o cerrar pestaña
   useEffect(() => {
@@ -278,7 +279,6 @@ export default function Student() {
   }, [exam, fin, showReview, isBlocked]);
 
   const blockExamRealtime = async (reason) => {
-    // 🔥 Si ya está bloqueado, no volver a bloquear
     if (isCurrentlyBlockedRef.current || fin || hasSubmittedRef.current) {
       console.log("⚠️ Ya está bloqueado o finalizado, ignorando");
       return;
@@ -286,12 +286,14 @@ export default function Student() {
     
     console.warn('🚫 BLOQUEANDO EXAMEN:', reason);
     
-    // 🔥 Marcar INMEDIATAMENTE como bloqueado
+    // 🔥 Guardar timestamp del bloqueo
+    blockTimestampRef.current = Date.now();
+    
+    // 🔥 Marcar como bloqueado INMEDIATAMENTE
     isCurrentlyBlockedRef.current = true;
-    justBlockedRef.current = true; // 🔥 NUEVO: Bloqueo reciente
     isExamActiveRef.current = false;
     
-    // 🔥 Bloquear UI INMEDIATAMENTE
+    // 🔥 Bloquear UI
     setIsBlocked(true);
     setBlockReason(reason);
     addViolationRealtime(reason);
@@ -306,15 +308,10 @@ export default function Student() {
     try {
       await blockStudent(exam.code, user.uid || user.email, reason);
       console.log('✅ Bloqueo registrado en Firebase');
+      console.log(`⏰ Protección de 10 minutos activada hasta: ${new Date(Date.now() + 600000).toLocaleTimeString()}`);
     } catch (error) {
-      console.error('Error al registrar bloqueo en Firebase:', error);
+      console.error('❌ Error al registrar bloqueo:', error);
     }
-
-    // 🔥 Después de 3 segundos, permitir que Firebase pueda actualizar el estado
-    setTimeout(() => {
-      justBlockedRef.current = false;
-      console.log("✅ Período de protección terminado");
-    }, 3000);
   };
 
   const addViolationRealtime = async (reason) => {
@@ -380,8 +377,9 @@ export default function Student() {
         setIsBlocked(false);
         isCurrentlyBlockedRef.current = false;
         hasSubmittedRef.current = false;
-        justBlockedRef.current = false; // 🔥 NUEVO
-        listenerInitializedRef.current = false; // 🔥 NUEVO
+        justBlockedRef.current = false;
+        listenerInitializedRef.current = false;
+        blockTimestampRef.current = 0; // 🔥 NUEVO
       } else {
         alert("❌ Código inválido");
       }
@@ -489,8 +487,9 @@ export default function Student() {
     hasSubmittedRef.current = false;
     isExamActiveRef.current = false;
     isCurrentlyBlockedRef.current = false;
-    justBlockedRef.current = false; // 🔥 NUEVO
-    listenerInitializedRef.current = false; // 🔥 NUEVO
+    justBlockedRef.current = false;
+    listenerInitializedRef.current = false;
+    blockTimestampRef.current = 0; // 🔥 NUEVO
     if (intervalRef.current) clearInterval(intervalRef.current);
     if (unsubscribeBlockRef.current) unsubscribeBlockRef.current();
   };
